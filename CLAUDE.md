@@ -196,6 +196,9 @@ a quota.
 
 ## Open questions blocking architecture lock
 
+Shareable, team-facing version of this whole list (plain + technical language, proposed
+defaults, the full API contract proposal): [docs/Pre_Build_Decisions.md](docs/Pre_Build_Decisions.md).
+
 ### Needs a whole-team decision
 
 1. **API contract.** Only `POST /profile` is specified anywhere. Every endpoint,

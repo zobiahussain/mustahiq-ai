@@ -8,6 +8,7 @@ Full requirements, architecture, and role breakdown are in [docs/](docs):
 - [docs/SRS.md](docs/SRS.md) — what we're building and why
 - [docs/Architecture.md](docs/Architecture.md) — system design, data model, deployment
 - [docs/Team_Work_Division.md](docs/Team_Work_Division.md) — who owns what
+- [docs/Pre_Build_Decisions.md](docs/Pre_Build_Decisions.md) — open decisions to settle before coding starts
 
 ## Repo layout
 
