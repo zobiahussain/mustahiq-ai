@@ -20,8 +20,8 @@ websites; retrieval runs only over uploaded or mock documents prepared for the d
 |---|---|---|
 | Core language | Python 3.11+ | All |
 | Eligibility scoring / ML | scikit-learn + XGBoost | Person 1 |
-| LLM inference | Groq API (Llama / Qwen open-weight models) | You |
-| Embeddings | Groq embeddings endpoint | You |
+| LLM inference (generation only) | Groq API (Llama / Qwen open-weight models) | You |
+| Embeddings | `sentence-transformers`, local CPU — `BAAI/bge-small-en-v1.5` (384-dim) | You |
 | Database + vector store | Supabase — Postgres with the pgvector extension | Person 3, You |
 | RAG framework | LlamaIndex over pgvector | You |
 | Trigger layer | LlamaIndex Workflows — event-driven, typed steps | You, Person 1, Person 3 |

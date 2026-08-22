@@ -2,9 +2,14 @@
 
 **Owner:** Marketplace, Business Matching & Shared RAG Layer role.
 
-pgvector tables, the LlamaIndex retrieval pipeline, and the Groq client wrapper. Exposed
-behind a stable internal function signature — `packages/eligibility` and
-`packages/nlp_assistant` both call into this rather than building their own retrieval.
+pgvector tables, the LlamaIndex retrieval pipeline, a local embedding wrapper
+(`sentence-transformers`, `BAAI/bge-small-en-v1.5`, 384-dim), and the Groq client wrapper
+for generation. Exposed behind a stable internal function signature —
+`packages/eligibility` and `packages/nlp_assistant` both call into this rather than
+building their own retrieval.
+
+Embeddings run locally, not through Groq (Groq has no embeddings endpoint) — see
+[Architecture.md §2.2](../../docs/Architecture.md#22-why-hosted-inference--for-generation-not-embeddings).
 
 **Depends on:** `packages/data` (schema, vector columns).
 **Depended on by:** `packages/eligibility`, `packages/nlp_assistant`, `packages/marketplace`.

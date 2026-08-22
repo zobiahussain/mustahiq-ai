@@ -61,8 +61,8 @@ RAG service. If it slips, two people stall.
 | Layer | Choice |
 |---|---|
 | Language | Python 3.11+ |
-| LLM inference | Groq API (Llama / Qwen open-weight) |
-| Embeddings | **UNRESOLVED — see Open Questions** |
+| LLM inference (generation only) | Groq API (Llama / Qwen open-weight) |
+| Embeddings | `sentence-transformers`, local, CPU — `BAAI/bge-small-en-v1.5` (384-dim) |
 | DB + vectors | Supabase Postgres + pgvector |
 | RAG | LlamaIndex over pgvector |
 | Triggers | LlamaIndex Workflows (typed, event-driven steps) |
@@ -90,26 +90,36 @@ Everything must run on free tiers. No GPU anywhere.
 
 ## LLM token accounting
 
-Every Groq call goes through **one wrapper I own**. That wrapper logs `usage`
-(`prompt_tokens`, `completion_tokens`, `total_tokens`), model, and call-site to an
-`llm_usage` table. Reasons: Groq's free tier is rate-limited per minute and a demo-day
-429 kills the presentation; and we need to know the real cost shape of the system.
+Every Groq call goes through **one wrapper I own**. On each call it prints `usage`
+(`prompt_tokens`, `completion_tokens`, `total_tokens`), the model, and the call-site to
+the **terminal** — nothing persisted, no database, no CSV. Reason: Groq's free tier is
+rate-limited per minute and a demo-day 429 kills the presentation, so watching
+consumption live during dev matters more than keeping history. If we ever want history,
+swap the `print` for an append to a CSV — one line, add later if needed.
 
-Precompute all embeddings before the demo. Only assistant replies generate live.
+Since embeddings run locally now (see Stack), only chat/completion calls touch Groq's
+rate limit — assistant replies and any generated explanation text. Still worth
+precomputing embeddings ahead of the demo for speed, but it's no longer required to dodge
+a quota.
 
 ---
 
+## Resolved
+
+- **Embeddings provider.** Groq has no embeddings endpoint. Decided: `sentence-transformers`
+  running locally (`BAAI/bge-small-en-v1.5`, 384-dim) — Groq stays generation-only.
+  Bends the "no models on team hardware" line in the Team Work Division doc; worth a
+  one-line heads-up to the team since it's a stated principle, but a 130MB CPU embedding
+  model isn't the GPU-inference risk that line was written to prevent.
+- **Vector dimension** — `vector(384)`, falls out of the model above. **Tell P3** — this
+  is a schema column type they own.
+
 ## Open questions blocking architecture lock
 
-1. **Embeddings provider.** Groq's official docs list no `/v1/embeddings` endpoint and no
-   embedding models — but the architecture doc assumes one. Must be resolved before the
-   RAG layer can be built. Whatever we pick fixes the `vector(N)` dimension in the schema,
-   which P3 needs.
-2. **Vector dimension** — falls out of (1). Schema-blocking for P3.
-3. **How marketplace matching actually decides between the 3 business models** — one
+1. **How marketplace matching actually decides between the 3 business models** — one
    embedding space with a classifier, or separate retrieval paths per model.
-4. **Notification channel for trigger 7** — in-app only, or email/SMS.
-5. **Fee figures and commitment cadence** — placeholders in both docs; need real numbers
+2. **Notification channel for trigger 7** — in-app only, or email/SMS.
+3. **Fee figures and commitment cadence** — placeholders in both docs; need real numbers
    before presenting.
 
 ---

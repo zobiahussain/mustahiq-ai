@@ -59,8 +59,8 @@ matching. Both draw on the same retrieval layer and the same database.
 |---|---|---|
 | Core language | Python 3.11+ | All |
 | Eligibility scoring / ML | scikit-learn + XGBoost | Person 1 |
-| LLM inference | Groq API (Llama / Qwen open-weight models) | You |
-| Embeddings | Groq embeddings endpoint | You |
+| LLM inference (generation only) | Groq API (Llama / Qwen open-weight models) | You |
+| Embeddings | `sentence-transformers`, local CPU — `BAAI/bge-small-en-v1.5` (384-dim) | You |
 | Database + vector store | Supabase — Postgres with the pgvector extension | Person 3, You |
 | RAG framework | LlamaIndex over pgvector | You |
 | Trigger layer | LlamaIndex Workflows — event-driven, typed steps | You, Person 1, Person 3 |
@@ -71,10 +71,10 @@ matching. Both draw on the same retrieval layer and the same database.
 | Frontend — Marketplace Portal | React + Vite (separate portal) | You |
 | Scheduled jobs | Render cron job — venture grace-period sweep | You |
 
-> **Status (Aug 2026):** the "Embeddings — Groq embeddings endpoint" row is unconfirmed —
-> Groq's public API reference does not currently list an embeddings endpoint or model.
-> See the open question in the root [CLAUDE.md](../CLAUDE.md). This blocks the vector
-> column dimension below and the RAG layer build.
+> **Decided (Aug 2026):** Groq has no embeddings endpoint. Embeddings run locally via
+> `sentence-transformers` instead — see §2.2. Groq is used for generation only: assistant
+> replies, JSON-mode field parsing, and match-reason text. This fixes the vector column
+> dimension at 384 (see §3.2).
 
 ### 2.1 Why One Database Instead of a Separate Vector Store
 
@@ -90,14 +90,21 @@ eligible candidates.
 - Filtering, joins, and vector ranking in a single SQL statement.
 - Supabase's free tier covers hackathon data volumes.
 
-### 2.2 Why Hosted Inference
+### 2.2 Why Hosted Inference — For Generation, Not Embeddings
 
-- No team machine has a GPU, so running models locally would be slow enough to put the
-  live demo at risk.
+- No team machine has a GPU, so running a generative model locally would be slow enough
+  to put the live demo at risk. Groq handles all text **generation**: assistant replies,
+  JSON-mode field parsing, and match-reason text.
 - Groq serves open-weight models over an OpenAI-compatible API on a free tier, so the
   client code is a base-URL change away from any other provider if limits become a
   problem.
 - Nothing to install, download, or warm up on presentation day.
+- **Embeddings are different.** Turning text into a vector is a fixed, deterministic
+  function — not generation — so there's no quality reason to pay an API round-trip for
+  it. `sentence-transformers` (`BAAI/bge-small-en-v1.5`, 384-dim, ~130MB) runs on CPU in
+  milliseconds and needs no API key or rate-limit budget. This lightly bends the "no
+  models on team hardware" principle, but a 130MB embedding model is not the GPU-class
+  inference risk that principle exists to avoid.
 
 ## 3. Retrieval Layer Design
 
@@ -122,7 +129,7 @@ Enabling vector storage and creating an indexed column:
 create extension if not exists vector;
 
 alter table store_listings
-  add column embedding vector(768);
+  add column embedding vector(384);
 
 create index on store_listings
   using hnsw (embedding vector_cosine_ops);
@@ -142,19 +149,19 @@ order by embedding <=> :query_vec
 limit 5;
 ```
 
-Generating an embedding and a grounded answer through the Groq client:
+Generating an embedding locally, and a grounded answer through the Groq client — two
+separate clients because they're two separate jobs:
 
 ```python
+from sentence_transformers import SentenceTransformer
 from groq import Groq
 
-client = Groq(api_key=os.environ['GROQ_API_KEY'])
+embedder = SentenceTransformer('BAAI/bge-small-en-v1.5')  # loaded once, reused
+groq_client = Groq(api_key=os.environ['GROQ_API_KEY'])
 
-vec = client.embeddings.create(
-    model='nomic-embed-text-v1_5',
-    input=listing_description,
-).data[0].embedding
+vec = embedder.encode(listing_description).tolist()  # 384-dim, runs on CPU, no API call
 
-answer = client.chat.completions.create(
+answer = groq_client.chat.completions.create(
     model='llama-3.1-8b-instant',
     messages=[{'role': 'user', 'content': grounded_prompt}],
 )
