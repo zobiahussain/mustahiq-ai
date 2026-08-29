@@ -1,12 +1,18 @@
 # Team Work Division
 
-**AI-Powered Unified Beneficiary Matching & Marketplace Platform — Al-Khidmat**
+**AI-Powered Unified Beneficiary Matching & Allocation Platform — Al-Khidmat**
 
 Five-person team, all with AI/ML backgrounds — there is no dedicated frontend or backend
 engineer. Every person owns a piece of the AI system first, and picks up backend or
 frontend work only where needed to ship that piece. The platform is presented as two coded
 portals over a deployed API, since hackathon judging includes seeing and using the
 product, not just the logic behind it.
+
+The platform is operated by Al-Khidmat staff on a beneficiary's behalf. Staff are the only
+people who log in; beneficiaries have no accounts. Every match the system produces is
+queued for staff review and reaches a beneficiary only once a person has approved it. This
+removes beneficiary authentication, password recovery, and account management from the
+build entirely.
 
 No models run on team hardware. All inference goes through the Groq API, and all data —
 relational records and vector embeddings alike — lives in a single Supabase Postgres
@@ -19,18 +25,20 @@ websites; retrieval runs only over uploaded or mock documents prepared for the d
 | Layer | Choice | Owner |
 |---|---|---|
 | Core language | Python 3.11+ | All |
-| Eligibility scoring / ML | scikit-learn + XGBoost | Person 1 |
-| LLM inference (generation only) | Groq API (Llama / Qwen open-weight models) | You |
-| Embeddings | `sentence-transformers`, local CPU — `BAAI/bge-small-en-v1.5` (384-dim) | You |
+| Cross-program discovery | scikit-learn + XGBoost — suggestions only | Person 1 |
+| Prioritization rubric | Transparent weighted scoring, weights stored per program | Person 1 |
+| LLM inference | Groq API (Llama / Qwen open-weight models) | You |
+| Embeddings | Groq embeddings endpoint *(unconfirmed — see CLAUDE.md)* | You |
 | Database + vector store | Supabase — Postgres with the pgvector extension | Person 3, You |
 | RAG framework | LlamaIndex over pgvector | You |
 | Trigger layer | LlamaIndex Workflows — event-driven, typed steps | You, Person 1, Person 3 |
 | Duplicate detection | RapidFuzz | Person 3 |
 | Backend / API | FastAPI + Pydantic v2 | Person 3 |
 | Backend hosting | Render | Person 3 |
-| Frontend — Main Platform Portal | React + Vite | Person 4 |
-| Frontend — Marketplace Portal | React + Vite (separate portal) | You |
-| Scheduled jobs | Render cron job — venture grace-period sweep | You |
+| Auth | Supabase Auth — staff accounts only, no beneficiary logins | Person 3 |
+| Frontend — Main Platform Portal | React + Vite (staff-operated) | Person 4 |
+| Frontend — Marketplace Portal | React + Vite (staff + listing views) *(see CLAUDE.md — conflicts with Marketplace_Spec)* | You |
+| Scheduled jobs | Render cron job — venture grace-period sweep *(stale, see §4.1 note)* | You |
 
 Everything above is free at hackathon scale: Supabase and Render both have free tiers, and
 Groq's free tier needs no credit card. Nothing requires a GPU.
@@ -50,6 +58,8 @@ itself.
 Grouped together because the Eligibility Engine calls the RAG service constantly for
 document-based criteria — the tightest dependency in the system.
 
+> "Venture lifecycle and fees" in this row is stale — see §4.1 note below.
+
 ### 2.2 Group 2 — These Three Together
 
 | Role | Covers | Frontend / Backend |
@@ -68,24 +78,34 @@ codebases, kept visually consistent.
 ## 3. Trigger Ownership
 
 Every trigger in the system, who owns it, and whether it fires on an event or a schedule.
-Triggers 3, 7, 8 and 9 were implicit in the original specification and are now assigned
-explicitly.
+Note that triggers 8 and 9 are both scheduled but run on different clocks: ranking is
+per-program and bi-weekly; the marketplace sweep is daily and platform-wide.
 
 | # | Fires when | Type | What runs | Owner |
 |---|---|---|---|---|
 | 1 | Beneficiary registers | Event | Score against all active programs | Person 1 |
-| 2 | Beneficiary registers | Event | Duplicate detection against existing records | Person 3 |
-| 3 | Profile updated | Event | Re-score eligibility; create listing if trade info added | Person 1, You |
-| 4 | Store listing created or edited | Event | Match against the existing listing pool | You |
-| 5 | New program added | Event | Re-scan all existing beneficiaries | Person 1 |
-| 6 | Eligibility criteria edited | Event | Re-scan all existing beneficiaries | Person 1 |
-| 7 | Match found | Event | Notify both sides | You |
-| 8 | Premium fee paid | Event | Re-rank that listing in existing match results | You |
-| 9 | Grace period ends | Scheduled | Start the donation commitment schedule | You |
+| 2 | Profile created | Event | Duplicate detection (CNIC exact, then RapidFuzz) | Person 3 |
+| 3 | Match pooled by staff | Event | Add to potentially eligible pool | Person 3 |
+| 4 | Verification recorded | Event | Create or link the application | Person 1 |
+| 5 | New programme added | Event | Re-scan all existing beneficiaries | Person 1 |
+| 6 | Criteria edited | Event | Re-scan all existing beneficiaries | Person 1 |
+| 7 | Listing created or edited | Event | Marketplace matching, notify both parties | You |
+| 8 | Ranking cycle due | Scheduled (bi-weekly) | Expire stale verifications, score and rank the pool | Person 1 |
+| 9 | Daily | Scheduled | Expire stale marketplace matches and listings | You |
 
-Trigger 9 is the only scheduled one — nothing happens in the system when a grace period
-ends, so no event can fire. It runs as a Render cron job and is required for the venture
-lifecycle demo, not optional.
+**This trigger table completely replaces the previous one.** Compared to the earlier
+revision: trigger 2 (duplicate detection) now runs CNIC-first, not vector similarity —
+consistent with profiles carrying no embedding. Triggers 3, 4, 8 are new — they didn't
+exist before (pooling, verification→application, and the bi-weekly ranking cycle). What
+used to be "premium fee paid → re-rank" and "grace period ends → donation commitment" are
+both gone — the marketplace no longer has fees. Trigger 9 kept its number but changed
+meaning entirely: it used to be the grace-period/donation sweep; it's now a daily
+marketplace-listing-expiry sweep. Still mine either way, but it is a different piece of
+code than what CLAUDE.md previously described.
+
+Neither scheduled trigger is optional. Trigger 8 is how allocation actually happens —
+without it the candidate pool is never ranked. Trigger 9 keeps the marketplace clean,
+since expiry is time-based and no event can cover it. Both run as scheduled jobs.
 
 ## 4. Role Detail
 
@@ -107,25 +127,30 @@ lifecycle demo, not optional.
 - Build the Marketplace Portal (React + Vite), sharing the palette, logo, and typography
   of the Main Platform Portal.
 
+> **"lifecycle and fee rules" and "grace-period sweep" above are stale.** The very next
+> subsection in this same document says "No Fees" — nothing is charged, and there is no
+> grace period. Trigger 9 (§3 above) is a daily marketplace-expiry sweep, not a
+> grace-period sweep. This paragraph wasn't updated when the rest of the doc was.
+
 **Three Marketplace Business Models**
 
 | Model | How it works | Example |
 |---|---|---|
 | 1. Supply-chain pairing | Match a beneficiary supplying a raw material or input with a beneficiary running the end-product business that needs it. | A leather/fabric supplier matched to a cobbler |
 | 2. Joint-venture formation | Match two beneficiaries with complementary skills who could combine into a new business rather than a supplier relationship. | A tailor and a fabric/garment shop owner matched to jointly open a boutique |
-| 3. Competitive ranking | A beneficiary offering goods or services similar to others can pay a premium fee to rank above unboosted competitors in match results. | Two shoe sellers on the marketplace; one pays to rank first |
+| 3. Employment | A business needing a skill is matched with a beneficiary who has it — one loan producing two livelihoods. | A growing boutique and a tailor without steady work |
 
-**Venture Lifecycle & Fee Structure**
+**No Fees**
 
-- A flat, one-time registration fee is charged when a store listing is first created.
-- A grace period of roughly six months to a year follows, during which no earnings-based
-  commitment applies.
-- Once the venture starts earning, a recurring donation commitment begins — periodic
-  payments over the following year — flowing back into Al-Khidmat's donation pool.
-- Premium ranking fees route into the same donation pool rather than being kept as
-  platform revenue.
-- Exact fee amounts and the donation-commitment cadence are placeholders — confirm the
-  figures before presenting.
+- Nothing is charged at any point — no registration fee, no ranking fee, no claim on
+  business earnings.
+- Once a business is established, the app may offer a gentle, voluntary donation option.
+  No schedule, no amount owed, no overdue state.
+- Al-Khidmat introduces only. Terms, pricing, delivery and disputes are entirely between
+  the two businesses.
+- Premium ranking was considered and rejected: charging for visibility in a charity
+  marketplace means the poorest are seen least, and routing the fee to donations does not
+  fix that.
 
 **Dependencies**
 
@@ -135,22 +160,31 @@ lifecycle demo, not optional.
   Conversational Assistant (RAG for grounded answers) — the platform's most-depended-on
   piece.
 
-### 4.2 AI Recommendation & Eligibility Matching Engine
+### 4.2 Cross-Program Discovery & Prioritization Engine
 
 **Responsibilities**
 
-- Design the eligibility scoring approach — how a profile is scored against program
-  criteria.
+- Design the cross-program discovery approach — how a profile is scored against program
+  criteria to surface suggestions.
 - Build hybrid scoring: rule-based hard cutoffs plus an XGBoost layer for soft-match
-  probability.
+  probability. This output is a suggestion for staff, never an application.
 - For document-based criteria, call the shared RAG service rather than building a
   separate retrieval path.
 - Keep the scoring methodology consistent across all seven program domains.
 - Build the "why you were matched" reasoning, turning a raw score into a plain-language
   explanation.
 - Own the recommendation-refresh workflow (triggers 5 and 6) and profile-update
-  re-scoring (trigger 3).
+  re-scoring (trigger 1).
+- Build the prioritization rubric — the transparent weighted scoring that ranks the
+  unified candidate pool, with per-factor breakdowns stored so any rank can be explained.
+- Own the bi-weekly ranking cycle (trigger 8), including expiring stale verifications
+  before scoring.
+- Keep `entry_path` out of every ranking computation. Candidates found by AI and
+  candidates who applied directly must be scored identically.
 - Evaluate recommendation quality (precision, recall, hit-rate) and tune against it.
+
+This role grew substantially from the previous revision: it now also owns the
+prioritization rubric and the bi-weekly ranking cycle, which didn't exist before.
 
 **Dependencies**
 
@@ -162,7 +196,7 @@ lifecycle demo, not optional.
 **Responsibilities**
 
 - Design the Supabase schema — tables, relationships, and vector columns — as the single
-  definition the API and ML code share.
+  definition the API and ML code share. **Delivered** — see `packages/data/schema/`.
 - Build synthetic beneficiary and program datasets, since real Al-Khidmat data isn't
   available.
 - Handle data cleaning and preprocessing.
@@ -181,9 +215,12 @@ lifecycle demo, not optional.
 **Responsibilities**
 
 - Build eligibility-side similarity matching between a profile and program requirements.
-- Build duplicate detection using RapidFuzz, and own its trigger (trigger 2).
+- Build duplicate detection using RapidFuzz, and own its trigger (trigger 2) — CNIC exact
+  match first, then fuzzy name/phone comparison.
 - Own the FastAPI layer serving both portals, with Pydantic v2 request/response models.
 - Own the Supabase connection layer and the Render deployment.
+- Own staff authentication (Supabase Auth) and role permissions (field officer /
+  department admin / super admin).
 - Coordinate end-to-end integration across the eligibility engine, data layer,
   marketplace module, and assistant.
 
@@ -200,14 +237,15 @@ lifecycle demo, not optional.
   criteria as text.
 - Parse free-text beneficiary input into structured profile fields using Groq's JSON-mode
   output.
-- Build and own the conversational assistant, grounded via the shared RAG service.
-- Build the Main Platform Portal (React + Vite) — profile entry, recommendations view,
-  department view.
+- Build and own the conversational assistant, grounded via the shared RAG service. Its
+  primary user is staff, not the beneficiary directly.
+- Build the Main Platform Portal (React + Vite) — profile entry, eligibility results, the
+  match review worklist, and the department view.
 
 **Dependencies**
 
 - Depends on the shared RAG service and the FastAPI layer.
-- Is what beneficiaries and departments interact with directly.
+- Is what Al-Khidmat staff interact with directly. Beneficiaries never do.
 
 ## 5. Dependency Map
 
@@ -217,11 +255,11 @@ lifecycle demo, not optional.
 | Eligibility Engine | Data Engineering (features), Shared RAG | Backend (API), Assistant (explanations) |
 | Data Engineering | — | All other roles |
 | Backend & Integration | Data Engineering, Eligibility Engine | Both portals |
-| NLP, Assistant & Main Portal | Shared RAG, Backend API | Beneficiaries / departments |
+| NLP, Assistant & Main Portal | Shared RAG, Backend API | Staff, who act on beneficiaries' behalf |
 
 ## 6. Build Order
 
-1. Data Engineering publishes the Supabase schema — everything else builds on it.
+1. Data Engineering publishes the Supabase schema — **done**, `packages/data/schema/`.
 2. Shared RAG layer comes up next: pgvector tables created, Groq client wrapped,
    retrieval exposed behind a stable signature.
 3. Eligibility Engine and Marketplace matching build in parallel against those two

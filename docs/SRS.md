@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-**AI-Powered Unified Beneficiary Matching Platform for Al-Khidmat**
+**AI-Powered Unified Beneficiary Matching & Allocation Platform for Al-Khidmat**
 
 ## 1. Project Overview
 
@@ -11,9 +11,14 @@ program has no simple way of finding out whether they also qualify for the other
 departments running those programs have no easy way of knowing that this person already
 exists in their pool of potential candidates.
 
-This project proposes an AI-powered Unified Beneficiary Matching Platform that builds a
-single profile for each beneficiary and uses it to intelligently match individuals with
-the Al-Khidmat programs they are eligible for.
+This project proposes an AI-powered Unified Beneficiary Matching & Allocation Platform
+that builds a single profile for each beneficiary, uses it to surface the Al-Khidmat
+programs they may qualify for, and then helps each department allocate its limited
+resources to the people who need them most.
+
+The platform separates three things that are usually collapsed together: discovering that
+someone may qualify, verifying that they actually need the help, and deciding who receives
+it when there is not enough to go around. AI does the first. People do the other two.
 
 The goal is not to replace the systems each department already uses, and it is not an
 attempt to build a full Management Information System. It is an intelligence layer sitting
@@ -54,29 +59,57 @@ from the existing beneficiary base.
 - Help beneficiaries who've received microfinance support find customers, suppliers, and
   complementary business connections.
 - Give successful marketplace ventures a lightweight way to give back to the donation pool.
+- Keep a human in the loop on every recommendation, so nothing reaches a beneficiary
+  without staff judgement.
+- Verify real, current need before anyone is treated as a candidate for assistance.
+- Allocate limited resources by verified need rather than by application date or who
+  happened to hear about a program.
+- Ensure people surfaced by cross-program matching compete on exactly the same terms as
+  those who applied directly.
 
 ## 4. Target Users
 
-### 4.1 Beneficiaries
+The platform is operated by Al-Khidmat staff on a beneficiary's behalf. Staff are the only
+people who log in. This is a deliberate design position: the clientele is largely rural and
+may not navigate an online system comfortably, and a system that requires them to do so
+would exclude the people it exists to serve.
 
-People seeking support or opportunities through Al-Khidmat's programs. They should be
-able to:
+### 4.1 Field Officers
 
-- Create and update their profile.
-- Provide personal, family, educational, financial, and location details.
-- View the programs they may qualify for.
-- Receive recommendations and notifications as new matches appear.
-- See why they were matched to a particular program.
-- Track the status of their applications.
+Al-Khidmat staff working directly with beneficiaries. They should be able to:
 
-### 4.2 Al-Khidmat Departments
+- Create and update a beneficiary's profile in conversation, skipping anything the person
+  is uncomfortable answering.
+- Create a store listing alongside a beneficiary who has trade or business information.
+- See the programs a beneficiary appears to qualify for, with the reasoning.
+- Review the match worklist and approve or dismiss what the system has found.
+- Make introductions between matched businesses.
+- Record fees and donation payments.
 
-Authorized staff managing individual programs. They should be able to:
+### 4.2 Department Administrators
 
-- Define eligibility criteria for their program.
-- View the beneficiaries recommended to them.
+Staff managing individual programs. In addition to everything a field officer can do, they
+should be able to:
+
+- Define and edit eligibility criteria for their program.
+- View the beneficiaries recommended to their department.
 - Identify people likely to qualify for their initiative.
 - Review how far their program's reach extends and how well matches are performing.
+
+### 4.3 Beneficiaries
+
+People seeking support or opportunities through Al-Khidmat's programs. They do not log in
+and have no accounts. Their experience of the platform is:
+
+- Their profile is created for them by a field officer, in conversation.
+- They are told in plain language what they appear to qualify for.
+- They own the content of their store listing and can have it updated on a later visit.
+- They are shown only matches a staff member has approved — never a pending one.
+- If a business match is found, a staff member contacts them and makes the introduction.
+
+The system never contacts a beneficiary directly. An automated message announcing a
+business partner would land badly in this context, and a match that staff would have
+dismissed should never have raised the person's hopes.
 
 ## 5. Core Features
 
@@ -87,138 +120,283 @@ background, employment and income information, location, assistance previously r
 and other relevant attributes. This removes the need to re-register from scratch for each
 program.
 
-### 5.2 AI-Based Eligibility Matching
+### 5.2 AI Cross-Program Discovery
 
 The system reads a beneficiary's profile and checks it against the eligibility criteria of
-every active program, not just the one they applied for. Someone who registers for one
-initiative may turn out to also qualify for vocational training, educational support,
-healthcare assistance, financial aid, or a community program — and the system flags these
-automatically.
+every active program, not just the one they applied for. Someone who applies for a health
+loan may turn out to also qualify for vocational training, educational support, or
+financial aid — and the system surfaces these automatically.
+
+A cross-program match is a suggestion, not an application. It does not make the person an
+applicant for that program and confers no priority. The confidence score attached to a
+match measures the likelihood that someone may qualify; it is never used in need-based
+prioritization.
 
 Eligibility criteria won't always arrive as clean structured fields — some programs may
-only have criteria written out in a document. For those cases the system uses
-Retrieval-Augmented Generation to pull the relevant criteria at matching time. Retrieval
-runs over documents uploaded to the platform or prepared as mock program documents; the
-system does not scrape external websites.
+only have criteria written out in a document. Those documents are processed once, at
+upload: a language model drafts the criteria as structured rules, a department
+administrator confirms the draft, and the confirmed rules are stored on the program.
+Scoring then reads the stored rules, never the document.
 
-### 5.3 AI Recommendation Engine
+No language model and no retrieval runs during eligibility scoring. Scoring is a
+deterministic rule check plus a trained classifier, so it completes in milliseconds and
+returns the same result for the same person every time — which is what makes it auditable.
+The same documents are separately chunked and embedded so the assistant can cite them on
+demand.
+
+### 5.3 Programs Requiring Explicit Application
+
+Not every program can be offered proactively. Most Al-Khidmat programs are grants or
+services — a department can approach someone and tell them they qualify, and the person is
+free to accept or decline at no cost to themselves.
+
+Microfinance is different. A loan creates a debt obligation. Surfacing someone as a
+microfinance candidate they never asked for would be pushing a liability onto a vulnerable
+person, and no amount of eligibility confidence justifies it.
+
+Programs are therefore marked with a flag indicating whether they may be offered
+proactively. For programs requiring explicit application, cross-program discovery still
+evaluates the person — so the department can see who would qualify if they asked — but the
+match is suppressed rather than pooled for outreach. The person must approach Al-Khidmat
+and request it.
+
+This also shapes the marketplace: a beneficiary only becomes a marketplace participant
+after they have applied for and received microfinance support and started a business. The
+marketplace is downstream of a loan the person chose to take, never of an eligibility
+match.
+
+### 5.4 AI Recommendation Engine
 
 For each beneficiary, it produces a list of suitable programs, an eligibility confidence
 score, and a plain-language reason behind each recommendation — for example: "You may
 qualify for Program X because your income level, location, and family profile match its
 requirements."
 
-### 5.4 Beneficiary AI Assistant
+### 5.5 Beneficiary AI Assistant
 
-A conversational assistant that helps beneficiaries understand what programs are
-available, what the eligibility requirements are, what documents they'll need, how to
-apply, and why a particular recommendation was made. It is grounded in the same retrieval
-layer used for eligibility matching, so answers reference actual program content rather
-than generic text.
+A conversational assistant answering questions about what programs are available, what the
+eligibility requirements are, what documents are needed, how to apply, and why a
+particular recommendation was made. It is grounded in the same retrieval layer used for
+eligibility matching, so answers reference actual program content rather than generic
+text, and cite the passage they came from.
 
-### 5.5 Supporting Department View
+Its primary user is a staff member working with a beneficiary — answering questions such
+as whether this person qualifies for anything else, or what documents a program requires.
+It runs on demand only and is never part of an automatic workflow.
+
+### 5.6 Potentially Eligible Pool
+
+People surfaced by cross-program discovery are placed in the relevant program's
+Potentially Eligible Pool. They are not contacted at this point and are not applicants.
+They wait until that program's periodic assessment cycle reaches them.
+
+This waiting stage is deliberate. Contacting someone the moment an algorithm flags them
+would raise expectations the organisation may not be able to meet; outreach happens on the
+department's schedule rather than the algorithm's.
+
+### 5.7 Verification & Outreach
+
+During a program's assessment cycle, staff contacts people in the potentially eligible
+pool and establishes:
+
+- Whether there is an actual, current need for this program.
+- Whether they have already applied for or received similar assistance — from another
+  Al-Khidmat department or elsewhere. Because the profile is unified, staff can see a
+  person's history across every Al-Khidmat program in one place, which no single
+  department could previously do.
+- Current financial and household circumstances, re-confirmed rather than assumed from
+  the original profile.
+- Any program-specific eligibility information, and an urgency level.
+
+Verification can fail, and failure removes the person from the pool rather than leaving
+them in it. Recorded outcomes are: verified, no actual need, assisted elsewhere, not
+eligible, unreachable, or declined.
+
+A verification expires after a configurable window (90 days by default). Circumstances
+change, and a candidate who rolls over across several cycles is re-contacted rather than
+ranked on stale information.
+
+Direct applicants pass through this same verification. It is not an extra hurdle for
+AI-identified candidates — it is the single gate everyone goes through.
+
+### 5.8 Unified Candidate Pool
+
+Once verified, a person joins the same candidate pool as everyone who applied to that
+program directly. From this point the two paths are indistinguishable: they are ranked by
+identical criteria, in one list.
+
+How a candidate entered — directly or through cross-program discovery — is recorded so the
+organisation can audit whether the matching is genuinely finding people who qualify. It is
+never used as an input to prioritization.
+
+### 5.9 Periodic Need-Based Prioritization
+
+Each program periodically evaluates its entire unified pool, bi-weekly by default and
+configurable per program. A prioritization rubric scores every candidate on verified need,
+urgency, vulnerability, household circumstances, and prior assistance, and ranks them
+against one another.
+
+The rubric is a transparent set of weights held as data on the program row, not a learned
+model. Three reasons: there are no training labels for who most deserved assistance; the
+decision must be defensible to a department head, a donor, or a rejected applicant; and a
+department can retune a weight without retraining anything.
+
+Weights are per-program. A health program may weight medical urgency heavily where an
+education program weights school-age children — the same engine, different weights, owned
+by the department.
+
+Every candidate's score is stored with its factor-by-factor breakdown, so any position in
+the ranking can be explained.
+
+### 5.10 Human Review & Allocation
+
+Staff reviews the ranked candidates and makes the final approval decision — the ranking is
+a recommendation, not a verdict. Local knowledge the rubric cannot capture belongs at this
+step.
+
+Resources are then allocated in approved priority order until the cycle's budget or
+capacity is exhausted. Candidates not funded roll over into the next cycle without
+reapplying, and the number of cycles they have waited is tracked so anyone repeatedly
+falling just below the line becomes visible.
+
+### 5.11 Supporting Department View
 
 A lightweight interface letting departments view matched beneficiaries, see potential
 applicants, and gauge their program's reach. A supporting feature, not the core of the
 project.
 
-### 5.6 Beneficiary Marketplace
+### 5.12 Beneficiary Marketplace
 
-Beyond matching beneficiaries to Al-Khidmat's programs, the same profile and matching
-infrastructure connects beneficiaries to each other. A beneficiary who has received
-microfinance financing — or simply has relevant trade or business information on their
-profile — can opt in to create a store listing: their trade or business, product or
-service, location, capacity, and pricing.
+Beyond matching beneficiaries to programmes, the same infrastructure connects
+beneficiaries to each other. A beneficiary who has applied for and received microfinance
+support can join the marketplace on the app and create a listing describing their
+business.
 
-This reuses the same matching AI built for eligibility matching — beneficiary-to-program
-and beneficiary-to-beneficiary matching are structurally the same problem, pointed at a
-different pair of profiles.
+Three matching models operate: supply chain (a supplier of inputs with a producer who
+needs them), employment (a business needing a skill with a beneficiary who has it), and
+joint venture (two owners pooling into one shared business). Rickshaw and three-wheeler
+operators participate as a logistics role, making distant matches workable.
 
-#### 5.6.1 Marketplace Business Models
+The marketplace runs on the beneficiary app without staff involvement. Matches are sent
+to both parties by SMS and email; they connect themselves. Nothing is charged at any
+point — no registration fee, no ranking fee, and no claim on business earnings. Once
+established, a beneficiary may choose to donate voluntarily.
 
-| Model | How it works | Example |
-|---|---|---|
-| 1. Supply-chain pairing | A beneficiary supplying a raw material or input is matched with a beneficiary running the end-product business that needs it. | A leather/fabric supplier matched to a cobbler |
-| 2. Joint-venture formation | Two beneficiaries with complementary skills are matched to combine into a new business rather than a supplier relationship. | A tailor and a fabric/garment shop owner matched to jointly open a boutique |
-| 3. Competitive ranking | A beneficiary offering goods or services similar to others can pay a premium fee to rank above unboosted competitors in match results. | Two shoe sellers on the marketplace; one pays to rank first |
+Al-Khidmat introduces only. Terms, pricing, delivery and disputes are entirely between the
+two businesses.
 
-#### 5.6.2 Venture Lifecycle & Fee Structure
+The module is specified in full in the accompanying
+[Marketplace Specification](Marketplace_Spec.md) document, with its own schema file.
 
-- A flat, one-time registration fee is charged when a store listing is first created.
-- A grace period of roughly six months to a year follows, during which no earnings-based
-  commitment applies.
-- Once earning, a recurring donation commitment begins — periodic payments over the
-  following year — flowing into Al-Khidmat's donation pool.
-- Premium ranking fees route into the same donation pool rather than being kept as
-  platform revenue.
-- Exact fee amounts and the donation-commitment cadence are placeholders — confirm the
-  figures before finalizing.
-- The platform tracks these fees and commitments as records rather than processing live
-  payments.
-
-### 5.7 Platform Interfaces
+### 5.13 Platform Interfaces
 
 The platform is presented as two separate, coded portals, since the product itself — not
-just the logic behind it — needs to be shown and used at the hackathon.
+just the logic behind it — needs to be shown and used at the hackathon. Both are
+staff-facing and sit behind a single staff login.
 
-- **Main Platform Portal** — for beneficiaries and departments: profile creation,
-  recommendations view, department view.
-- **Marketplace Portal** — for the business-matching side: store listing creation, match
-  results, and alerts.
+- **Main Platform Portal** — profile creation, eligibility results, the match review
+  worklist, and the department view.
+- **Marketplace Portal** — store listing creation, business match results, and the
+  introduction workflow.
 
-Full UI design details are covered in [Architecture.md](Architecture.md).
+Full UI design details are covered in the accompanying [System Architecture](Architecture.md)
+document, and every use case is traced step by step in the
+[End-to-End Flows](End_to_End_Flows.md) document.
+
+> **Note:** compare this section against [Marketplace_Spec.md §1](Marketplace_Spec.md) —
+> that document describes the marketplace as running entirely on a beneficiary-facing app
+> with *no* staff involvement, which reads as in tension with "Marketplace Portal" being
+> listed here as one of two staff-facing portals. Flagged in CLAUDE.md, not resolved here.
 
 ## 6. AI Components
 
-### 6.1 Recommendation System
+### 6.1 Cross-Program Discovery
 
-Matches beneficiaries to programs using rule-based eligibility cutoffs combined with a
-gradient-boosted classifier for soft-match probability.
+Surfaces programs a beneficiary may qualify for. Hard rules stated by the program
+eliminate anyone who does not meet policy; a gradient-boosted classifier then estimates
+confidence among those who remain. Output is a suggestion for staff review, never an
+application.
 
-### 6.2 Natural Language Processing
+Rules and the classifier are not alternatives. A policy threshold is a decision the
+department made and written down, and cannot be learned from data; confidence among those
+who pass it is a fuzzy pattern, which is what the classifier is for.
 
-Interprets beneficiary descriptions, program descriptions, and eligibility criteria.
-Free-text input is converted into structured profile fields using JSON-mode generation, so
-output is directly usable rather than parsed out of prose.
+For this build the classifier is trained on synthetic data, since no historical decisions
+are available. In operation, every verification outcome becomes a labelled training
+example — the platform generates its own training data as it is used.
 
-### 6.3 Similarity Matching
+### 6.2 Criteria Extraction (LLM, one-off)
+
+When a criteria document is uploaded, a language model drafts its rules as structured
+JSON: hard rules that determine pass or fail, soft signals that become classifier
+features, and the required documents a beneficiary must bring. A department administrator
+confirms the draft before it takes effect — a human validates the model's reading once,
+rather than the system trusting it on every registration.
+
+This runs at upload time only. It is not part of the scoring path.
+
+### 6.3 Natural Language Processing
+
+Converts a beneficiary's free-text situation description into structured profile fields
+using JSON-mode generation, so output is directly usable rather than parsed out of prose.
+Staff confirms the extraction. This touches data entry, not eligibility.
+
+### 6.4 Similarity Matching
 
 Finds the relationship between a beneficiary's profile and a program's requirements, and —
 for the marketplace — between two beneficiary profiles. Runs as vector similarity search
 with SQL filtering applied in the same query, so candidates are narrowed by hard
 constraints such as district or trade category before semantic ranking.
 
-### 6.4 Duplicate Detection
+### 6.5 Duplicate Detection
 
-Flags possible duplicate registrations of the same beneficiary across programs, combining
-fuzzy string comparison on identity fields with vector similarity on the wider profile.
+Flags possible duplicate registrations of the same beneficiary across programs, using
+exact CNIC matching first, then fuzzy comparison of name and phone via RapidFuzz. Profiles
+carry no embedding, and CNIC catches nearly all real duplicates.
 
-### 6.5 Conversational AI
+### 6.6 Conversational AI
 
 Powers the interactive assistant, answering only from retrieved platform content.
 
-### 6.6 Shared Retrieval (RAG) Layer
+### 6.7 Prioritization Rubric
 
-A single retrieval service sits behind both the eligibility engine and the conversational
-assistant, pulling relevant passages from uploaded or mock program and business documents
-at matching or answer time. This is one shared service rather than a separate pipeline per
-component, and it does not scrape external websites.
+Scores and ranks verified candidates within a program's unified pool. Implemented as a
+transparent weighted rubric rather than a learned model, for the reasons given in 5.9, and
+stored as data on the program row so departments can tune it without a code change.
+
+The rubric operates only on verified data and profile attributes. It has no access to how
+a candidate entered the pool.
+
+### 6.8 Shared Retrieval (RAG) Layer
+
+A single retrieval service serves the conversational assistant, match explanations, and
+marketplace business matching. It does not participate in eligibility scoring — retrieval
+answers questions and surfaces source passages; it does not decide who qualifies. It does
+not scrape external websites.
 
 The layer is built on a managed RAG framework rather than a hand-rolled retrieval script,
 so chunking, embedding, retrieval, and citation of source passages are handled by tested
 components instead of custom code written under time pressure.
 
-### 6.7 Agentic Workflow Layer
+### 6.9 Agentic Workflow Layer
 
 Some parts of the system respond only when asked; others run automatically and surface
 results without anyone asking first. Triggers are implemented as declarative, event-driven
 workflow steps rather than ad-hoc callbacks, so each trigger's inputs, outputs, and failure
 behaviour are explicit and independently testable.
 
-The complete trigger inventory, with owners, is in
-[Team_Work_Division.md](Team_Work_Division.md). On-demand components — the Beneficiary AI
-Assistant, and eligibility matching at first registration — need only a request/response
+The complete trigger inventory, with owners, is in the
+[Team Work Division](Team_Work_Division.md) document, and every trigger is traced end to
+end in the [End-to-End Flows](End_to_End_Flows.md) document. On-demand components — the
+assistant, and eligibility matching at first registration — need only a request/response
 API.
+
+On the eligibility side, no trigger delivers anything to a beneficiary directly — every
+automatic output lands in the staff review worklist first, because allocating limited
+resources is a decision that needs human judgement. The marketplace is deliberately
+different: it notifies both parties directly, since introducing two businesses carries no
+allocation decision and routing it through staff would make the module a burden rather
+than a benefit.
 
 ## 7. Non-Functional Requirements
 
@@ -238,8 +416,24 @@ current requirement.
 - Every recommendation and match must surface a plain-language reason alongside the score.
 - Assistant answers must be traceable to the source passage they were drawn from.
 
-### 7.4 Data Handling
+### 7.4 Fairness & Auditability
 
+- Candidates surfaced by AI and candidates who applied directly must be ranked by
+  identical criteria, in one pool.
+- Entry path is recorded for audit and must never be an input to prioritization.
+- Every ranking must be explainable to a factor-by-factor level.
+- Each ranking cycle stores a snapshot of the weights used, so past decisions remain
+  explainable after a rubric changes.
+
+### 7.5 Access & Data Handling
+
+- Only Al-Khidmat staff authenticate. There is no beneficiary login, password reset, or
+  account recovery anywhere in the system.
+- Staff accounts carry a role — field officer, department administrator, or super
+  administrator — which governs whether they can edit program criteria and which
+  departments' matches they can see.
+- Every profile, listing, and review decision records the staff member responsible, so
+  actions taken on a beneficiary's behalf are attributable.
 - Beneficiary records are held in a single managed Postgres database with row-level
   security available for production hardening.
 - No beneficiary data is used to train any model.
@@ -252,6 +446,8 @@ current requirement.
 - Building a full organization-wide reporting system
 - Scraping external websites for opportunities, tenders, or listings
 - Multilingual support
+- Beneficiary-facing self-service accounts — a possible later addition, not part of this
+  build
 - Processing or holding live payments — fees and commitments are tracked as records, not
   settled by the platform
 
@@ -269,13 +465,21 @@ current requirement.
 
 - Integration with existing Al-Khidmat systems.
 - Multilingual support for Urdu and regional languages.
+- A beneficiary-facing view, once the staff-operated model is established.
 - Predictive models to anticipate future beneficiary needs.
 - Automated application processing.
 - Expanding the marketplace to more categories, with richer business profiles and real
   payment processing.
 - Advanced analytics to support program planning.
 
-## 11. Proposed System Flow
+## 11. Proposed System Flow (superseded — see note)
+
+> **This section is carried over from the previous SRS revision and has not been rewritten
+> for the staff-operated model.** It still describes beneficiaries reaching "a results
+> screen," which contradicts §4's "beneficiaries do not log in." The
+> [End-to-End Flows](End_to_End_Flows.md) document's eleven use cases are the current,
+> authoritative version of this section — read that instead. Kept here only so the
+> discrepancy is visible rather than silently dropped.
 
 The platform runs one repeating pattern: something new gets added, the relevant part of
 the system immediately checks it against everything already in place, and a match — if
@@ -312,15 +516,18 @@ Departments see matched and recommended beneficiaries through the Supporting Dep
 View. Departments decide who to admit — the platform surfaces candidates, it never
 enrolls anyone automatically.
 
-### 11.4 Venture Lifecycle
+### 11.4 Marketplace Participation
 
-1. A store listing is created and the one-time registration fee is recorded.
-2. For a grace period of roughly six months to a year, no earnings-based commitment
-   applies.
-3. Once earning, a recurring donation commitment begins, recorded and routed toward the
-   donation pool.
-4. If the beneficiary opts into competitive ranking, the premium fee is recorded and
-   routed to the same pool.
+After a microfinance loan is disbursed, the beneficiary may join the marketplace on the
+app when they choose to.
+
+A conversational assistant creates the listing from voice or typed input, in whatever
+language they speak.
+
+Matching runs automatically and notifies both parties by SMS and email; they connect
+themselves.
+
+Nothing is charged. Once established, a beneficiary may choose to donate voluntarily.
 
 ## 12. Core Innovation
 

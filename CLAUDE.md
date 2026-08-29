@@ -1,6 +1,14 @@
-# Mustahiq AI — Al-Khidmat Beneficiary Matching & Marketplace Platform
+# Mustahiq AI — Al-Khidmat Beneficiary Matching & Allocation Platform
 
 Hackathon project (Alibaba × GitHub × X). Team of five. This repo covers **my module**, not the whole platform.
+
+> **Big update (29 Aug 2026):** the team delivered a substantially revised doc set —
+> the platform pivoted from a beneficiary self-service model to a **staff-operated case
+> management system** with a verification/prioritization/allocation pipeline, and the
+> marketplace was completely redesigned (no fees at all, replaced by voluntary donations
+> + "zakat graduation" tracking). A real SQL schema also shipped. This file has been
+> updated to match — see **What Changed** and **Needs Reconciling** below before building
+> anything that touches the old model.
 
 ---
 
@@ -29,63 +37,163 @@ that introduces a concept does.
 
 ---
 
+## What changed in the 29 Aug revision
+
+Not a content tweak — a real pivot. Read this before trusting anything from memory of the
+earlier revision:
+
+- **No beneficiary accounts, anywhere on the eligibility side.** Only Al-Khidmat staff
+  log in (field officer / department admin / super admin). A field officer enters a
+  beneficiary's profile *in conversation*, across a desk. Beneficiaries never see a
+  screen.
+- **Matching got a whole pipeline, not a single step.** It used to be: match → notify.
+  Now it's five stages: **Discovery** (automated, produces suggestions) →
+  **Potentially Eligible Pool** (waits for a staff-run assessment cycle) →
+  **Verification** (staff confirms real need, can fail and exit the pool) →
+  **Prioritization** (bi-weekly, a transparent weighted rubric ranks the *unified* pool
+  of verified candidates — direct applicants and AI-identified ones ranked identically) →
+  **Human Review & Allocation** (staff approves, funds top-ranked within budget). Full
+  detail: [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md).
+- **Fairness is now structural, not a convention.** `entry_path` (direct vs.
+  ai_identified) is recorded for audit but is schema-enforced to never enter a ranking
+  computation — see [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md) Use Case 5–6.
+- **Programs can require explicit application.** Microfinance is flagged this way —
+  discovery still scores it, but the match is suppressed, never pooled, because a loan is
+  a debt nobody should be offered unprompted.
+- **The marketplace lost every fee.** No registration fee, no premium ranking, no
+  donation-commitment schedule, no grace period. Premium ranking was explicitly
+  considered and rejected. Replaced by: an optional voluntary donation once a business is
+  established, and "zakat graduation" tracked as a reportable metric. Full spec:
+  [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md).
+- **The marketplace's 3rd model changed.** "Competitive ranking" (pay to rank above
+  competitors) is gone — replaced with **employment** (a business needing a skill matched
+  to a beneficiary who has it).
+- **No LLM, ever, in the eligibility scoring path.** Confirmed explicitly and repeatedly
+  across the new docs: rules + XGBoost only, deterministic, milliseconds, auditable.
+  Criteria documents get an LLM pass exactly once, at upload, to draft structured rules —
+  a human confirms before they take effect. Full detail:
+  [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md).
+- **A real schema shipped.** `packages/data/schema/al_khidmat_core_schema.sql` (11
+  tables) and `al_khidmat_marketplace_schema.sql` (9 tables) — see Needs Reconciling
+  below, since it assumes an embeddings provider we already ruled out.
+
+---
+
+## Needs reconciling — contradictions in the new doc set itself
+
+Found while converting; **not resolved here**, flagged per the "never silently decide"
+rule. Each is noted inline in the doc it appears in too.
+
+1. **Embeddings dimension conflicts with an already-shared decision.** The delivered SQL
+   schema uses `vector(768)` throughout, on the assumption Groq or `nomic-embed-text`
+   provides embeddings. We already established Groq has no embeddings endpoint (checked
+   directly against their API reference) and had committed to local
+   `sentence-transformers` at 384-dim — now pushed to GitHub before this revision landed.
+   **This is a real conflict, not a stale-text one** — there's a committed schema behind
+   the 768 number now. Cleanest reconciliation: keep local embeddings (still no Groq
+   dependency, still free, still fast), but switch the model to a **768-dim** local one
+   (`BAAI/bge-base-en-v1.5` or `all-mpnet-base-v2` are the standard picks) so the schema
+   needs no migration. Recommending this, not silently doing it — confirm before
+   `packages/rag` gets built against either number.
+2. **Is the Marketplace Portal staff-facing or a beneficiary app?** Architecture.md's own
+   §4 opening line says "Both portals are staff-facing... beneficiaries do not have
+   accounts," then §4.2 two paragraphs later says the marketplace "runs on the
+   beneficiary app rather than a staff portal" and "staff are not involved." These can't
+   both be true. [Marketplace_Spec.md](docs/Marketplace_Spec.md) is detailed, internally
+   consistent, and unambiguous: beneficiary-facing, no staff, conversational listing
+   creation by voice or text. Treating that as authoritative. This is the single biggest
+   scope change for *my own build* — `apps/marketplace-portal` is not a staff review tool
+   anymore, it's the thing a beneficiary opens themselves.
+3. **How does an account-less beneficiary access only their own listing?** Follows from
+   #2. The eligibility side is explicit that "there is no beneficiary login, password
+   reset, or account recovery anywhere in the system" (SRS §7.5) — but the marketplace
+   app needs *some* way to know which listing belongs to which person, without a
+   traditional account. Most likely answer is a phone-number-based lightweight identifier
+   (no password), but nothing says so explicitly yet. Needs an answer before
+   `apps/marketplace-portal` auth can be built.
+4. **Team_Work_Division.md §4.1 wasn't updated to match its own §4.1 two paragraphs
+   later.** Responsibilities still say "venture lifecycle and fee rules" and "grace-period
+   sweep" — the very next subsection in the same document is titled "No Fees." Corrected
+   in this file's scope section below; flagged inline in that doc too.
+5. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
+   prose says "Nine tables" then lists ~21 once marketplace tables are counted, and the
+   actual SQL says 11 (core) + 9 (marketplace) = 20. Not load-bearing, just sloppy —
+   treat the SQL files as ground truth for anything structural.
+
+---
+
 ## System Overview (whole platform, for context — this repo only implements my slice)
 
 ### Major components
 
-1. **Main Platform Portal** (React+Vite, P4) — profile entry, recommendations view, department view.
-2. **Marketplace Portal** (React+Vite, me) — store listing creation, match results, alerts.
-3. **API Layer** (FastAPI on Render, P3) — the only thing either portal talks to; profile
-   CRUD, demo-scope auth, exposes matching + workflow results.
-4. **AI Matching Engine** — one box on the architecture diagram, but two independent
-   implementations that never call each other, both calling into #5:
-   - Eligibility scoring (rules + XGBoost) — P1, `packages/eligibility`
-   - Marketplace business matching (3 models) — me, `packages/marketplace`
+1. **Main Platform Portal** (React+Vite, P4, staff-facing) — profile entry, the match
+   review worklist, the outreach list, verification, the ranked candidate pool +
+   allocation, department view. All staff-operated; a beneficiary never sees this screen.
+2. **Marketplace app** (React+Vite, me — folder still named `marketplace-portal`,
+   see Needs Reconciling #2) — beneficiary-facing, conversational listing creation, match
+   results, no staff involvement.
+3. **API Layer** (FastAPI on Render, P3) — the only thing either app talks to; profile
+   CRUD, **staff auth only** (Supabase Auth, role-gated), exposes matching + workflow
+   results.
+4. **Discovery Engine** — hard-rule elimination (plain Python) + XGBoost confidence
+   scoring. Suggestions only, never an application, never allocates. P1,
+   `packages/eligibility`. Runs alongside, but structurally separate from, the
+   **Prioritization Rubric** (bi-weekly, transparent weighted scoring over the *verified*
+   candidate pool) — also P1, also `packages/eligibility` now. Neither calls the
+   **Marketplace matching** (3 models) — me, `packages/marketplace`.
 5. **Shared RAG Layer** (LlamaIndex + pgvector + local embeddings, me) — an **in-process
    Python library**, not a separately deployed service. Imported directly by
    `packages/eligibility`, `packages/nlp_assistant`, `packages/marketplace`, and
-   `services/api`. "Stable internal function signature" means a Python function
-   signature, not a REST contract.
-6. **Workflow/Trigger Layer** (LlamaIndex Workflows) — 8 event triggers + 1 scheduled
-   sweep, cross-cutting, ownership split across roles (see trigger table in
+   `services/api`. Does **not** participate in eligibility scoring — only answers
+   questions and surfaces passages, on demand. Also now explicitly owns the one-off
+   criteria-document LLM extraction step (drafts `hard_rules`/`soft_signals` JSON for
+   admin confirmation).
+6. **Workflow/Trigger Layer** (LlamaIndex Workflows) — 7 event triggers + 2 scheduled
+   jobs (bi-weekly ranking cycle; daily marketplace expiry sweep), cross-cutting,
+   ownership split across roles (see trigger table in
    [Team_Work_Division.md](docs/Team_Work_Division.md)).
-7. **Conversational Assistant** (Groq + shared RAG, P4) — on-demand, request/response
-   only, not a trigger.
-8. **Data Layer** (Supabase Postgres + pgvector, schema owned by P3) — beneficiaries,
-   programs, listings, matches, donation ledger; embeddings live alongside the rows they
-   describe.
+7. **Conversational Assistant** (Groq + shared RAG, P4) — on-demand, staff-facing, not a
+   trigger. Answers "does this person qualify for anything else" / "what documents does
+   this program need," always with a citation.
+8. **Data Layer** (Supabase Postgres + pgvector, schema delivered by P3) — 11 core tables
+   + 9 marketplace tables. `beneficiary_profiles` carries **no embedding** — purely
+   structured. See `packages/data/schema/`.
 9. **External: Groq API** — generation only (chat completions, JSON-mode). Not
-   embeddings — see Resolved below.
+   embeddings — see Needs Reconciling #1.
 
-### Data flow — three repeating shapes
+### Data flow — the five-stage pipeline plus the marketplace's separate flow
 
-**A. Immediate flow** (registration / profile update / new listing / new program): event
-→ workflow layer fires → eligibility scoring + duplicate detection + marketplace matching
-run concurrently and independently of each other → results written back with a reason and
-`source_chunk_id` → both portals show the result → beneficiary can ask the assistant for
-more detail on request.
+**A. Eligibility side (staff-mediated, five stages):**
+profile entered by staff → Discovery scores against every active program (rules
+eliminate, XGBoost ranks confidence) → suggestion lands in staff's review worklist →
+staff pools it → **Potentially Eligible Pool** (not contacted yet, waits for that
+program's assessment cycle) → staff verifies real need during that cycle (can fail and
+exit) → verified candidates join the **Unified Candidate Pool** alongside direct
+applicants, indistinguishable → bi-weekly, a transparent rubric ranks the whole pool by
+verified need → staff reviews and allocates within budget → unfunded candidates roll over
+without reapplying.
 
-**B. Re-trigger flow** ("day one, day five" — SRS §11.2): every new event re-checks
-against *everything already in the system*, not just new-vs-new. This is why a new
-program re-scans all existing beneficiaries (triggers 5/6) and a new listing re-scans the
-whole listing pool (trigger 4), instead of only matching against things created after it.
+**B. Re-scan flow** ("day one, day five" pattern, same principle as before): a new or
+changed program re-scans *every* existing beneficiary (triggers 5/6), not just new
+registrations.
 
-**C. Venture lifecycle** (time-based for its last step, not event-based): listing created,
-registration fee recorded → grace period (~6–12mo, no event fires during this — nothing
-happens in the system) → **[trigger 9, scheduled cron]** grace period ends → donation
-commitment schedule starts → optional premium fee paid → trigger 8 re-ranks.
+**C. Marketplace (separate module, no staff, no fees):** beneficiary receives a
+microfinance loan → later, on their own, opens the app → conversational assistant
+structures a listing from voice/text → matching runs automatically against the whole
+pool → both parties notified by SMS/email → they connect themselves. A daily sweep
+expires unanswered matches (7 days) and unconfirmed listings (6 months).
 
 ### System dependency graph
 
 ```
-Data Engineering (schema)              ships first — everyone depends on it
+Data Engineering (schema)              delivered — packages/data/schema/
   -> Shared RAG (me)                   ships second — Eligibility, Assistant, Marketplace depend on it
-       -> Eligibility (P1)         --\
-       -> Marketplace (me)         ---+-> Backend/API (P3) -> both portals (P4, me)
-  -> Dedup (P3)                        depends only on schema, not RAG
+       -> Eligibility/Discovery (P1)  --\
+       -> Marketplace (me)             --+-> Backend/API (P3) -> both apps (P4, me)
+  -> Dedup (P3)                          depends only on schema, not RAG
 ```
 
-### APIs — mostly undefined (biggest concrete gap)
+### APIs — mostly undefined (biggest concrete gap, unchanged by this revision)
 
 Architecture.md names exactly **one** endpoint: `POST /profile`. No full endpoint list, no
 request/response schemas, no error contract exists anywhere yet. Every other role's
@@ -97,13 +205,29 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
 - English only — multilingual is future work (SRS 7.2).
 - Every recommendation/match needs a plain-language reason + traceable source chunk
   (SRS 7.3).
-- No row-level security at hackathon scale; it's named as future production hardening,
-  not a current requirement (SRS 7.4).
-- **No training on real beneficiary data** — XGBoost trains on Data Engineering's
-  *synthetic* dataset, never on data collected through the live app (SRS 7.4).
+- **Fairness is structural**: `entry_path` recorded for audit, never usable in a ranking
+  computation — enforced at the schema/rubric-validation level, not just by convention
+  (SRS 7.4).
+- Every ranking must be explainable to a factor-by-factor level; each ranking cycle
+  snapshots the weights used (SRS 7.4).
+- Only staff authenticate; no beneficiary login/password reset/account recovery anywhere
+  on the eligibility side (SRS 7.5).
+- No row-level security at hackathon scale; named as future production hardening (SRS
+  7.5).
+- **No training on real beneficiary data** — XGBoost trains on synthetic data for the
+  hackathon; in production, `verifications` outcomes become real training labels as the
+  platform is used (SRS 7.5, Eligibility_Flow_Explained §3).
 - Never auto-enroll; departments decide (SRS §8, Architecture §8).
-- No live payments — ledger rows only (SRS §8, Architecture §8).
+- **The platform never contacts a beneficiary directly** — every match is staff-reviewed
+  first (Architecture §8).
+- Microfinance (and any program flagged `requires_explicit_application`) is never offered
+  proactively — a loan is a debt (SRS §5.3).
+- **No fees anywhere in the marketplace** — no registration fee, no premium ranking, no
+  claim on business earnings; only a voluntary, no-schedule donation (Marketplace_Spec
+  §1, §10).
 - No scraping — retrieval only over uploaded/mock docs (SRS §8, Architecture §8).
+- **No LLM/retrieval in the eligibility scoring loop** — deterministic only, for
+  auditability (Eligibility_Flow_Explained §7).
 - Render free tier sleeps + cold-starts; Groq free tier is rate-limited per minute — the
   top two demo risks named in Team_Work_Division §8.
 
@@ -113,24 +237,36 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
 
 **Owned end-to-end:**
 - **Shared RAG layer** — pgvector tables, LlamaIndex retrieval pipeline, Groq client
-  wrapper. *Two other roles build against this.* Highest-priority, must be stable day one.
-- **Marketplace module** — the 3 business models:
+  wrapper (generation only), local embedding wrapper. *Two other roles build against
+  this.* Highest-priority, must be stable day one. **New:** also owns the one-off
+  criteria-document LLM extraction (hard_rules/soft_signals JSON, admin-confirmed) and
+  its chunking+embedding into `program_criteria`.
+- **Marketplace module** — 3 business models, now:
   1. Supply-chain pairing (supplier ↔ end-product business)
-  2. Joint-venture formation (complementary skills → new business)
-  3. Competitive ranking (premium fee ranks a listing above competitors)
-- **Venture lifecycle & fees** — registration fee, grace period, donation commitment,
-  premium fee. Recorded in a Donation Ledger; **no live payment processing.**
-- **Marketplace Portal** — React + Vite, separate codebase from the Main Platform Portal,
-  shared palette/logo/typography.
+  2. Employment (business needing a skill ↔ beneficiary who has it) — **replaces the old
+     "competitive ranking" model**
+  3. Joint-venture formation (complementary skills → new business)
+  Plus logistics (rickshaw/three-wheeler operators) as a participant role. Matching:
+  complementary-role filter → distance-eligibility filter → vector similarity → proximity
+  re-weighting (same cluster ×1.00 / adjacent district ×0.85 / same province ×0.70 /
+  elsewhere ×0.50). Full spec: [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md).
+- **No fees, no venture lifecycle.** The old registration-fee/grace-period/donation-ledger
+  model is **gone entirely** — replaced by an optional voluntary donation with no
+  schedule, and "zakat graduation" (mustahiq → donor) tracked as a reportable metric.
+- **Marketplace app** — React + Vite, beneficiary-facing (see Needs Reconciling #2),
+  shared palette/logo/typography with the Main Platform Portal.
 - **Dummy data** — applicant + store-listing profiles for the demo.
-- **Triggers I own:** 4 (listing created/edited → match pool), 7 (match found → notify
-  both sides), 8 (premium fee paid → re-rank), 9 (grace period ends → scheduled Render
-  cron sweep), and half of 3 (profile updated → create listing if trade info added).
+- **Triggers I own (renumbered and re-scoped — do not reuse the old numbers from
+  memory):** 7 (listing created/edited → marketplace matching, notify both parties by
+  SMS/email), 9 (daily → expire stale marketplace matches after 7 days, expire
+  unconfirmed listings after 6 months). The old triggers 4/7/8/9/half-of-3 no longer
+  apply as described.
 
-**Not mine:** eligibility scoring/XGBoost (P1), Supabase schema + synthetic datasets (P3),
-FastAPI + RapidFuzz dedup + Render deploy (P3), NLP/assistant + Main Portal (P4).
+**Not mine:** cross-program discovery + prioritization rubric/XGBoost (P1), Supabase
+schema (P3, **delivered**), FastAPI + dedup (CNIC-first, then RapidFuzz) + Render deploy +
+staff auth (P3), NLP/assistant + Main Portal (P4).
 
-**I depend on:** P3's schema (trade/business fields, vector columns) and P3's deploy.
+**I depend on:** P3's schema (**now real** — `packages/data/schema/`) and P3's deploy.
 **Depends on me:** the eligibility engine and the conversational assistant both call my
 RAG service. If it slips, two people stall.
 
@@ -142,11 +278,12 @@ RAG service. If it slips, two people stall.
 |---|---|
 | Language | Python 3.11+ |
 | LLM inference (generation only) | Groq API (Llama / Qwen open-weight) |
-| Embeddings | `sentence-transformers`, local, CPU — `BAAI/bge-small-en-v1.5` (384-dim) |
+| Embeddings | `sentence-transformers`, local, CPU — dimension **unresolved**, see Needs Reconciling #1 |
 | DB + vectors | Supabase Postgres + pgvector |
 | RAG | LlamaIndex over pgvector |
 | Triggers | LlamaIndex Workflows (typed, event-driven steps) |
 | API | FastAPI + Pydantic v2 (P3 owns) |
+| Auth | Supabase Auth — staff only (P3 owns) |
 | Hosting | Render free tier + Render cron |
 | Frontend | React + Vite |
 
@@ -157,11 +294,14 @@ Everything must run on free tiers. No GPU anywhere.
 ## Hard constraints (from the SRS — do not violate)
 
 - **Recommend, never auto-enroll.** Departments make the final call.
-- **No live payments.** Fees and commitments are ledger rows only.
+- **Never contact a beneficiary directly.** Staff reviews every match first.
+- **Fairness is structural.** `entry_path` recorded for audit, never used in ranking.
+- **No fees in the marketplace, anywhere.** Voluntary donation only.
 - **No web scraping.** Retrieval runs only over uploaded/mock documents.
-- **No training on beneficiary data.**
+- **No training on real beneficiary data.**
+- **No LLM/retrieval in eligibility scoring.** Deterministic rules + XGBoost only.
 - **Every match/recommendation shows a plain-language reason**, traceable to a real
-  source chunk (`match_record.source_chunk_id`).
+  source chunk (`match_records.source_chunk_id`).
 - **English only.** Multilingual is a future enhancement.
 - **Filter and rank in one SQL query.** Never fetch top-k by vector and filter in Python
   afterwards — that can return nothing usable.
@@ -177,22 +317,39 @@ rate-limited per minute and a demo-day 429 kills the presentation, so watching
 consumption live during dev matters more than keeping history. If we ever want history,
 swap the `print` for an append to a CSV — one line, add later if needed.
 
-Since embeddings run locally now (see Stack), only chat/completion calls touch Groq's
-rate limit — assistant replies and any generated explanation text. Still worth
-precomputing embeddings ahead of the demo for speed, but it's no longer required to dodge
-a quota.
+Since embeddings run locally, only chat/completion calls touch Groq's rate limit —
+assistant replies, JSON-mode profile parsing, and the one-off criteria-extraction call.
+Eligibility scoring itself makes **zero** Groq calls, by design (see Needs Reconciling
+and Eligibility_Flow_Explained.md) — this significantly lowers rate-limit risk versus the
+earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 
 ---
 
-## Resolved
+## Resolved (this revision answered several old open questions)
 
-- **Embeddings provider.** Groq has no embeddings endpoint. Decided: `sentence-transformers`
-  running locally (`BAAI/bge-small-en-v1.5`, 384-dim) — Groq stays generation-only.
-  Bends the "no models on team hardware" line in the Team Work Division doc; worth a
-  one-line heads-up to the team since it's a stated principle, but a 130MB CPU embedding
-  model isn't the GPU-inference risk that line was written to prevent.
-- **Vector dimension** — `vector(384)`, falls out of the model above. **Tell P3** — this
-  is a schema column type they own.
+- **Reason text: templated, not LLM-generated.** Confirmed explicitly and repeatedly —
+  no LLM in the scoring loop at all. Match reasons are built from the rule/score
+  breakdown. This was open question territory before; now it's just how the system
+  works.
+- **Auth model, eligibility side: fully specified.** Supabase Auth, staff-only, three
+  roles (field_officer / department_admin / super_admin) gating criteria-edit and
+  department visibility. (The marketplace side is a separate, still-open question — see
+  Needs Reconciling #3.)
+- **Notification channel: SMS + email, both parties, no phone calls.** Specified in
+  Marketplace_Spec §7.
+- **Marketplace model disambiguation: resolved, and simpler than either option I'd been
+  weighing.** Not a classifier and not fully separate retrieval paths — a listing
+  declares "seeking flags" (inputs / workers / a partner / work) that determine which
+  models it participates in, then a shared filter+similarity+proximity pipeline ranks
+  within that.
+- **Duplicate-found behavior: resolved.** Flagged to a staff queue (`duplicate_flags`,
+  status `pending`); staff confirms or dismisses; merging is manual, never automatic.
+- **Store listing creation flow: resolved, and different from either of my old
+  guesses.** Not auto-created from profile trade info, and not a manual staff-built
+  form — a beneficiary creates it themselves later, conversationally, once a loan is
+  disbursed. Entirely separate from profile creation.
+- **Venture "earning" status: moot.** No fees, no grace period, no earning-status flag at
+  all anymore — this concept doesn't exist in the new design.
 
 ## Open questions blocking architecture lock
 
@@ -200,78 +357,61 @@ a quota.
 
 1. **API contract.** Only `POST /profile` is specified anywhere. Every endpoint,
    request/response shape, and error format needs agreement before `services/api`, both
-   portals, and my packages can build against a stable target in parallel — this is the
-   whole premise the build order depends on.
-2. **Trigger execution model — sync or async?** SRS 11.1 implies registration blocks on
-   results ("lands on a results screen... right then"). But triggers 5/6/13 re-scan *all*
-   beneficiaries when a program changes — that can't reasonably block an admin's HTTP
-   request, and no queue/worker infra (Celery, Redis, etc.) is named anywhere for a single
-   Render free-tier service. Needs an explicit answer, not an assumption baked into code.
-3. **Auth/authorization model.** Architecture's diagram says "demo-scope auth" with
-   nothing further — no login flow, no beneficiary-vs-department role distinction, no
-   session strategy specified anywhere.
-4. **The seven program domains are never listed.** SRS §1 says Al-Khidmat runs "seven
-   distinct domain areas" and names four as examples (education, healthcare, financial
-   support, vocational training). The other three are undefined — blocks Data
-   Engineering's synthetic dataset and Eligibility's "consistent across all seven domains"
-   requirement (Team_Work_Division 4.2).
-5. **Duplicate-found behavior.** Trigger 2 runs detection on every registration, but no
-   doc says what happens when one's found — block registration, flag for department
-   review, silently merge? Affects Backend (owns the trigger) and the Main Portal (owns
-   the resulting UX).
-6. **Reason text: templated or LLM-generated?** If eligibility/match reasons are live
-   Groq calls rather than filled from a template, re-scan triggers (5, 6, 13) could burst
-   dozens of calls at once — precisely the per-minute rate-limit risk Team_Work_Division
-   §8 already names as demo risk #1, just not yet connected to this specific decision.
+   apps, and my packages can build against a stable target in parallel — this is the
+   whole premise the build order depends on. Unchanged by this revision.
+2. **Embeddings dimension.** See Needs Reconciling #1 above — recommending a 768-dim
+   local model to match the delivered schema without a migration, needs confirming.
+3. **Trigger execution model — sync or async?** Still unanswered. Registration-time
+   discovery scoring plausibly runs inline (it's milliseconds, deterministic). But
+   triggers 5/6 re-scan *all* beneficiaries when a program changes — that can't
+   reasonably block an admin's HTTP request, and no queue/worker infra is named anywhere
+   for a single Render free-tier service.
+4. **The seven program domains are still never listed.** SRS §1 still only names four as
+   examples. Blocks Data Engineering's synthetic dataset and Eligibility's "consistent
+   across all seven domains" requirement.
+5. **Marketplace Portal: staff tool or beneficiary app?** See Needs Reconciling #2 — this
+   one is mine to build, so it blocks me specifically, but it's a whole-team-visible
+   contradiction between two of the delivered docs.
+6. **How does an account-less beneficiary access their own marketplace listing?** See
+   Needs Reconciling #3.
 
 ### Mine to decide — surfacing per the "never silently decide" rule, not deciding alone
 
-7. **How marketplace matching decides between the 3 business models** — one embedding
-   space with a classifier, or separate retrieval paths per model.
-8. **Notification channel for trigger 7** — in-app only, or email/SMS.
-9. **Store listing creation flow.** SRS 5.7 implies a manual form in the Marketplace
-   Portal; the trigger table (trigger 3) implies auto-creation the moment a profile has
-   trade info. My working assumption: auto-create a draft listing on profile save, let the
-   portal edit/publish it — but that's a guess, not yet a decision.
-10. **Venture "earning" status.** SRS phrasing ("once the venture starts earning")
-    implies a real earnings signal, but nothing in the system observes actual revenue —
-    there's no payment processing at all. Working assumption: `venture_status` flips from
-    `grace_period` to `earning` purely on the clock, driven by the same trigger-9 sweep,
-    not by any external evidence. A simplification worth confirming out loud.
+7. ~~How marketplace matching decides between the 3 business models~~ — **resolved**,
+   see Resolved above.
+8. ~~Notification channel for trigger 7~~ — **resolved**, see Resolved above.
 
 ### Watch item — a risk our own decision introduced
 
-11. **Render memory budget.** Loading `sentence-transformers` (~130MB) into the same
-    free-tier web service as FastAPI + scikit-learn + XGBoost may be tight on Render's
-    free-tier RAM ceiling. Mitigation if it bites: lazy-load the embedder as a singleton,
-    or split it into its own light process.
+9. **Render memory budget.** Loading `sentence-transformers` into the same free-tier web
+   service as FastAPI + scikit-learn + XGBoost may be tight on Render's free-tier RAM
+   ceiling — more so if the embedding-dimension reconciliation lands on a larger 768-dim
+   model. Mitigation if it bites: lazy-load the embedder as a singleton, or split it into
+   its own light process.
 
 ### Minor / can defer
 
-12. **Fee figures and commitment cadence** — placeholders in both docs; need real numbers
-    before presenting.
-13. `consent_flags` on Beneficiary Profile — schema field exists, semantics (what
-    consent, gates what behavior) never defined.
-14. `store_listings.registration_fee_paid` boolean vs. Donation Ledger's
-    `registration_fee` entry — possible redundant source of truth; the boolean probably
-    should be derived from ledger existence rather than stored separately.
+10. `consent_flags`/`consent_given` on Beneficiary Profile — schema field exists,
+    semantics (what consent, gates what behavior) never defined.
+11. **Doc-hygiene:** table counts disagree across Architecture.md and the SQL files (see
+    Needs Reconciling #5) — not load-bearing, just worth a cleanup pass sometime.
 
 ---
 
 ## Repo layout (decided — single monorepo)
 
 ```
-apps/main-portal/            Person 4 — React + Vite
-apps/marketplace-portal/     Me       — React + Vite
-services/api/                Person 3 — FastAPI, shared by both portals
-packages/rag/                Me       — shared RAG layer (build first, day one)
-packages/marketplace/        Me       — 3 business models, lifecycle, fees
-packages/eligibility/        Person 1 — scoring engine
-packages/dedup/              Person 3 — RapidFuzz duplicate detection
-packages/data/                Data Eng role — schema, synthetic data, features (ships first)
+apps/main-portal/            Person 4 — React + Vite, staff-facing
+apps/marketplace-portal/     Me       — React + Vite, beneficiary-facing (see Needs Reconciling #2)
+services/api/                Person 3 — FastAPI, staff auth, shared by both apps
+packages/rag/                Me       — shared RAG layer + criteria extraction (build first, day one)
+packages/marketplace/        Me       — 3 business models, matching, no fees
+packages/eligibility/        Person 1 — discovery engine + prioritization rubric
+packages/dedup/              Person 3 — CNIC-first, then RapidFuzz duplicate detection
+packages/data/                Data Eng role — schema (delivered, packages/data/schema/), synthetic data, features
 packages/nlp_assistant/       Person 4 — free-text parsing + conversational assistant
 workflows/                    Cross-cutting — LlamaIndex Workflow trigger definitions
-docs/                          SRS.md, Architecture.md, Team_Work_Division.md
+docs/                          SRS.md, Architecture.md, Team_Work_Division.md, Eligibility_Flow_Explained.md, End_to_End_Flows.md, Marketplace_Spec.md
 ```
 
 My work lives in `packages/rag/`, `packages/marketplace/`, and `apps/marketplace-portal/`.
@@ -283,3 +423,11 @@ My work lives in `packages/rag/`, `packages/marketplace/`, and `apps/marketplace
 - `docs/SRS.md` — requirements, scope boundaries, system flow
 - `docs/Architecture.md` — architecture, data model, end-to-end flow, deployment
 - `docs/Team_Work_Division.md` — roles, trigger ownership, build order
+- `docs/Eligibility_Flow_Explained.md` — where the LLM runs vs. XGBoost vs. rules vs. RAG,
+  and why — read this before touching anything in `packages/eligibility` or the criteria
+  extraction step in `packages/rag`
+- `docs/End_to_End_Flows.md` — all 11 use cases traced step by step, with tables touched
+- `docs/Marketplace_Spec.md` — full marketplace module spec; authoritative for
+  `packages/marketplace` and `apps/marketplace-portal`
+- `packages/data/schema/al_khidmat_core_schema.sql`,
+  `packages/data/schema/al_khidmat_marketplace_schema.sql` — the real, delivered schema
