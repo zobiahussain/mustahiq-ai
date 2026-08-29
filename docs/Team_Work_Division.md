@@ -8,11 +8,17 @@ frontend work only where needed to ship that piece. The platform is presented as
 portals over a deployed API, since hackathon judging includes seeing and using the
 product, not just the logic behind it.
 
-The platform is operated by Al-Khidmat staff on a beneficiary's behalf. Staff are the only
-people who log in; beneficiaries have no accounts. Every match the system produces is
-queued for staff review and reaches a beneficiary only once a person has approved it. This
-removes beneficiary authentication, password recovery, and account management from the
-build entirely.
+Two access models, deliberate and different. On the **eligibility side**, the platform is
+operated by Al-Khidmat staff on a beneficiary's behalf — staff are the only ones who log
+in there, and every match is queued for staff review before it ever reaches a
+beneficiary. This removes beneficiary authentication, password recovery, and account
+management from that half of the build entirely, because receiving assistance should not
+require navigating a system.
+
+The **marketplace** is different: a beneficiary owns their listing, updates their own
+availability, and receives their own matches directly, so they authenticate themselves —
+phone number + SMS one-time code, no password. Allocating limited resources needs human
+judgement; introducing two businesses does not, so it isn't routed through staff at all.
 
 No models run on team hardware. All inference goes through the Groq API, and all data —
 relational records and vector embeddings alike — lives in a single Supabase Postgres
@@ -35,10 +41,11 @@ websites; retrieval runs only over uploaded or mock documents prepared for the d
 | Duplicate detection | RapidFuzz | Person 3 |
 | Backend / API | FastAPI + Pydantic v2 | Person 3 |
 | Backend hosting | Render | Person 3 |
-| Auth | Supabase Auth — staff accounts only, no beneficiary logins | Person 3 |
+| Auth — staff portal | Supabase Auth, email + password | Person 3 |
+| Auth — marketplace app | Phone number + SMS one-time code, no password | Person 3 (schema/verification), You (app-side flow) |
 | Frontend — Main Platform Portal | React + Vite (staff-operated) | Person 4 |
-| Frontend — Marketplace Portal | React + Vite (staff + listing views) *(see CLAUDE.md — conflicts with Marketplace_Spec)* | You |
-| Scheduled jobs | Render cron job — venture grace-period sweep *(stale, see §4.1 note)* | You |
+| Frontend — Marketplace App | React + Vite (beneficiary-facing) | You |
+| Scheduled jobs | Render cron job — daily marketplace expiry sweep | You |
 
 Everything above is free at hackathon scale: Supabase and Render both have free tiers, and
 Groq's free tier needs no credit card. Nothing requires a GPU.
@@ -113,8 +120,8 @@ since expiry is time-based and no event can cover it. Both run as scheduled jobs
 
 **Responsibilities**
 
-- Own the Beneficiary Marketplace end-to-end — matching logic, lifecycle and fee rules,
-  dummy data, alerts, and notifications.
+- Own the Beneficiary Marketplace end-to-end — matching logic, dummy data, alerts, and
+  notifications. No fees to administer — see "No Fees" below.
 - Stand up and own the shared RAG layer: pgvector tables, the LlamaIndex retrieval
   pipeline, and the Groq client wrapper.
 - Publish the RAG service behind a stable internal function signature early, since two
@@ -122,15 +129,13 @@ since expiry is time-based and no event can cover it. Both run as scheduled jobs
 - Generate the dummy applicant and store-listing profiles needed to demo marketplace
   matching.
 - Build the marketplace trigger as a LlamaIndex Workflow — fires on a new or updated
-  listing, scans the pool, surfaces matches as alerts, notifies both sides.
-- Own the scheduled grace-period sweep (trigger 9) as a Render cron job.
-- Build the Marketplace Portal (React + Vite), sharing the palette, logo, and typography
-  of the Main Platform Portal.
-
-> **"lifecycle and fee rules" and "grace-period sweep" above are stale.** The very next
-> subsection in this same document says "No Fees" — nothing is charged, and there is no
-> grace period. Trigger 9 (§3 above) is a daily marketplace-expiry sweep, not a
-> grace-period sweep. This paragraph wasn't updated when the rest of the doc was.
+  listing, scans the pool, notifies both sides directly by SMS and email. No staff step —
+  see the Marketplace App access model in Architecture.md §4.2.
+- Own the scheduled daily sweep (trigger 9) as a Render cron job — expires unanswered
+  matches after 7 days and unconfirmed listings after 6 months.
+- Build the Marketplace App (React + Vite), sharing the palette, logo, and typography of
+  the Main Platform Portal. Beneficiary-facing, phone + SMS OTP login — a separate access
+  model from the staff portal's email + password, not a variant of it.
 
 **Three Marketplace Business Models**
 

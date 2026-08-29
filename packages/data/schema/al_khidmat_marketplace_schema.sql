@@ -19,7 +19,56 @@
 
 
 -- ============================================================
--- 1. TRADE CATEGORIES
+-- 1. BENEFICIARY APP ACCOUNTS & LOGIN
+-- The marketplace has its own access model, deliberately
+-- different from the staff portal's. A beneficiary owns their own
+-- listing and matches, so they authenticate as themselves -- but
+-- there is no password, no email, no account-recovery flow: login
+-- is a phone number plus a one-time code sent by SMS, the same
+-- channel already used for match notifications (see NOTIFICATIONS
+-- below). The pattern mirrors Easypaisa / JazzCash login, so it is
+-- already familiar.
+--
+-- The phone number is captured on the loan application, so it
+-- links straight to the existing beneficiary_profiles row rather
+-- than creating a new identity. Changing a registered number is
+-- staff-assisted at a facilitation centre, not self-service --
+-- self-service recovery without email is not realistic for this
+-- clientele.
+-- ============================================================
+
+create table beneficiary_app_accounts (
+    id                        uuid primary key default gen_random_uuid(),
+    beneficiary_id            uuid unique not null
+                                references beneficiary_profiles(id) on delete cascade,
+    phone                     text unique not null,   -- login identifier
+    phone_verified            boolean default false,
+    previous_phone            text,
+    phone_changed_by_staff_id uuid references staff_users(id),
+    phone_changed_at          timestamptz,
+    preferred_language        text default 'ur',
+    active                    boolean default true,
+    last_login_at             timestamptz,
+    created_at                timestamptz default now()
+);
+
+create index on beneficiary_app_accounts (phone);
+
+create table login_otps (
+    id           uuid primary key default gen_random_uuid(),
+    phone        text not null,
+    code_hash    text not null,      -- store a hash, never the code
+    expires_at   timestamptz not null default (now() + interval '10 minutes'),
+    consumed_at  timestamptz,
+    attempts     int default 0,
+    created_at   timestamptz default now()
+);
+
+create index on login_otps (phone, expires_at);
+
+
+-- ============================================================
+-- 2. TRADE CATEGORIES
 -- Reference table, not an enum, so a category can be added without
 -- a migration. "Women-led" is deliberately NOT here -- it is an
 -- attribute that cuts across every category, and lives as a flag
@@ -47,7 +96,7 @@ insert into trade_categories (name) values
 
 
 -- ============================================================
--- 2. STORE LISTINGS
+-- 3. STORE LISTINGS
 -- A listing is A BUSINESS, not a person. It may be run by one
 -- beneficiary or by several who formed a venture -- ownership
 -- lives in listing_participants, never on this table.
@@ -140,7 +189,7 @@ create index on store_listings using hnsw (embedding vector_cosine_ops);
 
 
 -- ============================================================
--- 3. LOGISTICS ROUTES
+-- 4. LOGISTICS ROUTES
 -- Rickshaw and three-wheeler operators cover a corridor, not a
 -- point, so a single district column cannot describe them.
 --
@@ -166,7 +215,7 @@ create index on logistics_routes (listing_id);
 
 
 -- ============================================================
--- 4. LISTING PARTICIPANTS
+-- 5. LISTING PARTICIPANTS
 -- Who is involved in a listing and how. One row per person per
 -- listing. A solo trader has one row; a venture between two people
 -- has two; an employee has a row with role = 'employee'.
@@ -200,7 +249,7 @@ create index on listing_participants (listing_id);
 
 
 -- ============================================================
--- 5. VENTURE LINEAGE
+-- 6. VENTURE LINEAGE
 -- When listings combine into a venture, the venture is a NEW
 -- listing that declares its own cluster, district, trade and role
 -- -- nothing is inherited, because the combined shop may be
@@ -226,7 +275,7 @@ create index on venture_lineage (parent_listing_id);
 
 
 -- ============================================================
--- 6. MARKETPLACE MATCHES
+-- 7. MARKETPLACE MATCHES
 -- Three models, one table.
 --
 -- No staff review gate: matches go to BOTH parties directly. They
@@ -280,7 +329,7 @@ create index on marketplace_matches (final_score desc);
 
 
 -- ============================================================
--- 7. NOTIFICATIONS
+-- 8. NOTIFICATIONS
 -- SMS and email only. No phone calls -- that would put the burden
 -- back on Al-Khidmat staff, which this module deliberately avoids.
 -- ============================================================
@@ -302,7 +351,7 @@ create index on notifications (beneficiary_id, status);
 
 
 -- ============================================================
--- 8. DONATIONS
+-- 9. DONATIONS
 -- Voluntary only. There is no schedule, no amount owed, no overdue
 -- state, and nothing that could be read as an obligation on a
 -- beneficiary's business income.
@@ -324,7 +373,7 @@ create index on donations (beneficiary_id);
 
 
 -- ============================================================
--- 9. GRADUATION EVENTS
+-- 10. GRADUATION EVENTS
 -- Al-Khidmat's own stated goal is turning beneficiaries into
 -- self-reliant businesses and eventually into donors. In Islamic
 -- terms this is the move from mustahiq (eligible to receive) to

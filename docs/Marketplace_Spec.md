@@ -10,10 +10,9 @@ exists.
 The marketplace connects them. It is a separate module from eligibility matching, running
 on the beneficiary app, and it operates without staff involvement.
 
-> **This is the authoritative source for the marketplace module.** Where
-> [Architecture.md](Architecture.md) or [Team_Work_Division.md](Team_Work_Division.md)
-> describe the Marketplace Portal as staff-facing, treat this document as correct instead
-> — see the reconciliation note in CLAUDE.md.
+> **This is the authoritative source for the marketplace module.** The eligibility side
+> and the marketplace are two front ends with two different, deliberate access models —
+> Architecture.md §4 lays out both side by side.
 
 ## 1. Operating Principles
 
@@ -40,6 +39,22 @@ on the beneficiary app, and it operates without staff involvement.
 3. The loan is approved and disbursed.
 4. Later, when they are ready, the beneficiary joins the marketplace on the app
    themselves. This is not tied to disbursement.
+
+### 2.1 Login — Phone + SMS One-Time Code
+
+There is no password, no email, no account-recovery flow. Login is a phone number plus a
+one-time code sent by SMS.
+
+- The number is already captured on the loan application, so login links straight to the
+  existing `beneficiary_profiles` row via `beneficiary_app_accounts`.
+- It's the same channel already used for match notifications (§7) — no new delivery
+  mechanism to build.
+- The pattern mirrors Easypaisa / JazzCash login, so it's already familiar.
+- Changing a registered number is staff-assisted at a facilitation centre, not
+  self-service — self-service recovery without email isn't realistic for this clientele.
+
+Full schema (`beneficiary_app_accounts`, `login_otps`) is in Architecture.md §4.2.1 and
+`packages/data/schema/al_khidmat_marketplace_schema.sql`.
 
 Loan product and trade category are independent. A tailor funded under a Small Business
 Loan and a tailor funded under Loan for Orphan's Mother are identical to the marketplace —

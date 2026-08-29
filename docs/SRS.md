@@ -69,10 +69,12 @@ from the existing beneficiary base.
 
 ## 4. Target Users
 
-The platform is operated by Al-Khidmat staff on a beneficiary's behalf. Staff are the only
-people who log in. This is a deliberate design position: the clientele is largely rural and
-may not navigate an online system comfortably, and a system that requires them to do so
-would exclude the people it exists to serve.
+On the eligibility side covered in this section, the platform is operated by Al-Khidmat
+staff on a beneficiary's behalf — staff are the only ones who log in here. This is a
+deliberate design position: the clientele is largely rural and may not navigate an online
+system comfortably, and a system that requires them to do so would exclude the people it
+exists to serve. (The marketplace, covered in §5.12, is the deliberate exception — see
+§5.13 and §7.5.)
 
 ### 4.1 Field Officers
 
@@ -98,18 +100,26 @@ should be able to:
 
 ### 4.3 Beneficiaries
 
-People seeking support or opportunities through Al-Khidmat's programs. They do not log in
-and have no accounts. Their experience of the platform is:
+People seeking support or opportunities through Al-Khidmat's programs. Their experience
+differs by which half of the platform they're in:
 
+**Eligibility side** — they do not log in and have no accounts here:
 - Their profile is created for them by a field officer, in conversation.
 - They are told in plain language what they appear to qualify for.
-- They own the content of their store listing and can have it updated on a later visit.
 - They are shown only matches a staff member has approved — never a pending one.
-- If a business match is found, a staff member contacts them and makes the introduction.
 
-The system never contacts a beneficiary directly. An automated message announcing a
-business partner would land badly in this context, and a match that staff would have
-dismissed should never have raised the person's hopes.
+**Marketplace** — they log in themselves (phone + SMS one-time code, §5.13) and act
+without a staff intermediary:
+- They create and own their own listing, via a conversational assistant, and update it
+  themselves whenever they choose.
+- If a business match is found, they're notified directly by SMS and email, and connect
+  with the other party themselves — no staff introduction step.
+
+On the eligibility side, the system never contacts a beneficiary directly — an automated
+message announcing a match staff might have dismissed would raise hopes it shouldn't
+have. The marketplace works the opposite way on purpose: matches there carry no
+allocation decision, so there is nothing for a beneficiary's hopes to be raised falsely
+about, and both parties are notified directly by SMS and email.
 
 ## 5. Core Features
 
@@ -290,23 +300,20 @@ The module is specified in full in the accompanying
 
 ### 5.13 Platform Interfaces
 
-The platform is presented as two separate, coded portals, since the product itself — not
-just the logic behind it — needs to be shown and used at the hackathon. Both are
-staff-facing and sit behind a single staff login.
+The platform is presented as two separate, coded front ends, since the product itself —
+not just the logic behind it — needs to be shown and used at the hackathon. They have two
+different access models, deliberately:
 
-- **Main Platform Portal** — profile creation, eligibility results, the match review
-  worklist, and the department view.
-- **Marketplace Portal** — store listing creation, business match results, and the
-  introduction workflow.
+- **Main Platform Portal** — staff-facing, sits behind staff login (email + password).
+  Covers profile creation, eligibility results, the match review worklist, and the
+  department view.
+- **Marketplace App** — beneficiary-facing, sits behind phone + SMS one-time-code login,
+  no staff involvement. Covers store listing creation, business match results, and the
+  parties connecting directly.
 
 Full UI design details are covered in the accompanying [System Architecture](Architecture.md)
-document, and every use case is traced step by step in the
-[End-to-End Flows](End_to_End_Flows.md) document.
-
-> **Note:** compare this section against [Marketplace_Spec.md §1](Marketplace_Spec.md) —
-> that document describes the marketplace as running entirely on a beneficiary-facing app
-> with *no* staff involvement, which reads as in tension with "Marketplace Portal" being
-> listed here as one of two staff-facing portals. Flagged in CLAUDE.md, not resolved here.
+document (§4.2.1 for the marketplace login flow), and every use case is traced step by
+step in the [End-to-End Flows](End_to_End_Flows.md) document.
 
 ## 6. AI Components
 
@@ -427,8 +434,11 @@ current requirement.
 
 ### 7.5 Access & Data Handling
 
-- Only Al-Khidmat staff authenticate. There is no beneficiary login, password reset, or
-  account recovery anywhere in the system.
+- Only Al-Khidmat staff authenticate **on the eligibility side** — there is no
+  beneficiary login, password reset, or account recovery there. The marketplace app is
+  the deliberate exception: beneficiaries authenticate themselves via phone number + SMS
+  one-time code (Architecture.md §4.2.1), since they own their own listing and matches
+  there.
 - Staff accounts carry a role — field officer, department administrator, or super
   administrator — which governs whether they can edit program criteria and which
   departments' matches they can see.

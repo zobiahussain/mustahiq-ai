@@ -9,22 +9,22 @@ database holding both relational records and vector embeddings, and all model in
 served by the Groq API. The shared retrieval layer sits behind both the Matching Engine
 and the Conversational Assistant rather than in the vertical flow — both call into it.
 
-```
-AL-KHIDMAT STAFF   (the only people who log in)
-        |
-        v
-[ MAIN PLATFORM PORTAL ]      React + Vite
-  - Profile entry, eligibility results
-  - Outreach list, verification, ranked pool
-  - Department view
+Two front ends, two access models — deliberately different, not an inconsistency:
 
-[ MARKETPLACE PORTAL ]        React + Vite
-  - Store listing creation
-  - Business match review + introductions
-        |
-        v   (both portals call the same backend)
+```
+AL-KHIDMAT STAFF                        BENEFICIARIES
+  (email + password)                      (phone + SMS one-time code)
+        |                                       |
+        v                                       v
+[ MAIN PLATFORM PORTAL ]      React + Vite  [ MARKETPLACE APP ]        React + Vite
+  - Profile entry, eligibility results        - Listing creation via
+  - Outreach list, verification, ranked pool     conversational assistant
+  - Department view                            - Business match results,
+                                                  connect directly — no staff step
+        |                                       |
+        v   (both apps call the same backend)   v
 [ API LAYER ]                 FastAPI on Render
-  - Profile CRUD, demo-scope auth
+  - Profile CRUD, two separate auth flows above
   - Exposes matching + workflow results
         |
         v
@@ -114,10 +114,11 @@ matching. Both draw on the same retrieval layer and the same database.
 | Duplicate detection | RapidFuzz | Person 3 |
 | Backend / API | FastAPI + Pydantic v2 | Person 3 |
 | Backend hosting | Render | Person 3 |
-| Auth | Supabase Auth — staff accounts only, no beneficiary logins | Person 3 |
+| Auth — staff portal | Supabase Auth, email + password | Person 3 |
+| Auth — marketplace app | Phone number + SMS one-time code, no password (§4.2) | Person 3 (schema/OTP), You (app-side flow) |
 | Frontend — Main Platform Portal | React + Vite (staff-operated) | Person 4 |
-| Frontend — Marketplace Portal | React + Vite (staff + listing views) *(see note — conflicts with Marketplace_Spec)* | You |
-| Scheduled jobs | Render cron job — venture grace-period sweep *(stale — see Team_Work_Division note)* | You |
+| Frontend — Marketplace App | React + Vite (beneficiary-facing) | You |
+| Scheduled jobs | Render cron job — daily marketplace expiry sweep | You |
 
 ### 2.1 Why One Database Instead of a Separate Vector Store
 
@@ -279,8 +280,26 @@ primary before demo day and rehearse only that one.
 Two separate, coded front ends, since the hackathon requires an actual usable product on
 screen.
 
-Both portals are staff-facing and sit behind a single staff login. Beneficiaries do not
-have accounts.
+The two front ends have two different access models, and that's deliberate, not an
+inconsistency between them:
+
+| | Staff Portal | Marketplace App |
+|---|---|---|
+| Who logs in | Al-Khidmat staff only | Beneficiaries |
+| Auth | Email + password (Supabase Auth) | Phone + SMS one-time code |
+| Covers | Eligibility, verification, ranking, allocation | Listings, matching, connections |
+| Staff role | Operate it entirely | None — reports only |
+
+They differ because the two halves of the platform need different things from
+authentication. On the eligibility side, beneficiaries genuinely have no accounts — staff
+enter profiles on their behalf, because receiving assistance should not require
+navigating a system. The marketplace is the opposite case: a person owns their listing,
+updates their own availability, and receives their own matches, so they need to be able
+to authenticate as themselves.
+
+A blanket statement like "beneficiaries never log in" or "staff are the only
+authenticated users," wherever it appears elsewhere in these docs, means the eligibility
+side only.
 
 ### 4.1 Main Platform Portal
 
@@ -288,18 +307,58 @@ Covers profile creation, eligibility results, the match review worklist, and the
 department view. The worklist is the working screen of the product — both sides of each
 match, the score, the plain-language reason, and approve or dismiss actions.
 
-### 4.2 Marketplace Portal
+### 4.2 Marketplace App
 
-The marketplace runs on the beneficiary app rather than a staff portal. It covers listing
-creation via a conversational assistant, business match results, and direct search for
-suppliers, workers, partners, or transport. Staff are not involved in marketplace
-operation — they run microfinance and read reports.
+Runs on the beneficiary's own phone, not a staff portal. It covers listing creation via a
+conversational assistant, business match results, and direct search for suppliers,
+workers, partners, or transport. Staff are not involved in marketplace operation at all —
+they run microfinance and read reports, nothing more. See
+[Marketplace_Spec.md](Marketplace_Spec.md) for the full module spec, and §4.2.1 below for
+the login flow.
 
-> This paragraph directly contradicts the opening line of §4 above ("Both portals are
-> staff-facing... beneficiaries do not have accounts") within the same document. It
-> matches [Marketplace_Spec.md](Marketplace_Spec.md), which is the more detailed and
-> internally consistent source — treat that document as authoritative for this question,
-> and treat §4's opening line as the stale one. Flagged in CLAUDE.md.
+#### 4.2.1 Marketplace Login — Phone + SMS OTP
+
+- No password, no email, no reset flow.
+- The phone number is already captured on the loan application, so login links straight
+  to the existing `beneficiary_profiles` row via a new `beneficiary_app_accounts` table.
+- Same channel already used for match notifications (§7 in Marketplace_Spec.md) — no new
+  delivery mechanism to build.
+- Mirrors Easypaisa / JazzCash login, so the pattern is already familiar to users.
+- A number change is **staff-assisted at a facilitation centre**, not self-service —
+  self-service recovery without email isn't realistic for this clientele.
+
+```sql
+create table beneficiary_app_accounts (
+    id                        uuid primary key default gen_random_uuid(),
+    beneficiary_id            uuid unique not null
+                                references beneficiary_profiles(id) on delete cascade,
+    phone                     text unique not null,   -- login identifier
+    phone_verified            boolean default false,
+    previous_phone            text,
+    phone_changed_by_staff_id uuid references staff_users(id),
+    phone_changed_at          timestamptz,
+    preferred_language        text default 'ur',
+    active                    boolean default true,
+    last_login_at             timestamptz,
+    created_at                timestamptz default now()
+);
+
+create index on beneficiary_app_accounts (phone);
+
+create table login_otps (
+    id           uuid primary key default gen_random_uuid(),
+    phone        text not null,
+    code_hash    text not null,      -- store a hash, never the code
+    expires_at   timestamptz not null default (now() + interval '10 minutes'),
+    consumed_at  timestamptz,
+    attempts     int default 0,
+    created_at   timestamptz default now()
+);
+
+create index on login_otps (phone, expires_at);
+```
+
+Both tables now live in `packages/data/schema/al_khidmat_marketplace_schema.sql`.
 
 ### 4.3 Design Principles
 
@@ -333,7 +392,8 @@ documents as `al_khidmat_core_schema.sql` (11 tables) and `al_khidmat_marketplac
 - **Department** — id, name, domain. Owns programs; its staff see the matches for those
   programs.
 - **Staff User** — id, full_name, email, department_id, role (field_officer |
-  department_admin | super_admin), active. The only authenticated actor in the system.
+  department_admin | super_admin), active. The only authenticated actor on the
+  eligibility side — the marketplace app has its own `beneficiary_app_accounts` (§4.2.1).
 - **Beneficiary Profile** — id, full_name, cnic, phone, household_size, dependents,
   monthly_income, employment_status, district, education_level, has_disability,
   prior_assistance_count, domain_attributes (jsonb), staff_notes, completeness_score,
@@ -447,10 +507,14 @@ than an agent graph.
 
 - The platform recommends — it never auto-enrolls a beneficiary into a program.
   Departments make the final call.
-- The platform never contacts a beneficiary directly. Every match is reviewed by a staff
-  member, and contact is made by that person.
-- Beneficiaries are shown only approved matches. A pending or dismissed match is never
-  surfaced to them.
+- **On the eligibility side**, the platform never contacts a beneficiary directly — every
+  match is reviewed by a staff member, and contact is made by that person. Beneficiaries
+  are shown only approved matches; a pending or dismissed one is never surfaced.
+- **The marketplace is the deliberate exception.** It notifies both parties directly by
+  SMS and email, with no staff review gate. The asymmetry is intentional: allocating
+  limited resources is a decision that needs human judgement; introducing two businesses
+  is not, and routing it through staff would make the module a burden rather than a
+  benefit.
 - The marketplace charges nothing at any point and takes no share of business earnings.
   Al-Khidmat introduces only — terms, pricing, delivery, transport costs and disputes are
   entirely between the two businesses, and this is displayed at listing creation and
@@ -472,8 +536,9 @@ than an agent graph.
 | Scheduled sweep | Render cron job |
 | Database + vectors | Supabase managed Postgres (free tier) |
 | Model inference | Groq API (free tier) |
-| Both portals | Static build — Render static site or equivalent |
-| Staff authentication | Supabase Auth — staff accounts only |
+| Both apps | Static build — Render static site or equivalent |
+| Staff authentication | Supabase Auth, email + password |
+| Marketplace authentication | Phone + SMS OTP — `beneficiary_app_accounts`, `login_otps` |
 
 Render's free tier sleeps after inactivity and cold-starts slowly; wake the service before
 presenting. Groq's free tier is rate-limited per minute, so all embeddings are precomputed

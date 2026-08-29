@@ -311,10 +311,8 @@ and bi-weekly; the marketplace expiry sweep is daily and platform-wide.
 - If verified, they compete for resources on exactly the same terms as anyone who applied
   directly.
 - If not funded this cycle, they carry over without reapplying.
-- They never log in. Al-Khidmat staff are the only authenticated users in the system.
-
-> This closing line — "they never log in" — is stated as an absolute about the whole
-> system, but [Marketplace_Spec.md](Marketplace_Spec.md) describes beneficiaries opening
-> "the app" themselves to create a marketplace listing by voice or text, unmediated by
-> staff. Both can't be entirely true as written; see CLAUDE.md for how these two
-> documents need reconciling.
+- On this, the eligibility side, they never log in — Al-Khidmat staff are the only
+  authenticated users. If they later join the marketplace (a separate module, Use Case
+  10), that's the deliberate exception: they authenticate themselves there by phone + SMS
+  one-time code, since they own their own listing and matches. See
+  [Marketplace_Spec.md](Marketplace_Spec.md) and Architecture.md §4.2.1.

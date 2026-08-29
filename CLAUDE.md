@@ -74,15 +74,18 @@ earlier revision:
   a human confirms before they take effect. Full detail:
   [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md).
 - **A real schema shipped.** `packages/data/schema/al_khidmat_core_schema.sql` (11
-  tables) and `al_khidmat_marketplace_schema.sql` (9 tables) — see Needs Reconciling
-  below, since it assumes an embeddings provider we already ruled out.
+  tables) and `al_khidmat_marketplace_schema.sql` (10 tables, now including
+  `beneficiary_app_accounts`/`login_otps`) — see Needs Reconciling below, since it
+  assumes an embeddings provider we already ruled out.
+- **Two front ends, two access models — resolved and now consistent everywhere.** Staff
+  portal: email + password, staff only. Marketplace app: phone + SMS one-time code,
+  beneficiary-facing, no staff at all. Every blanket "beneficiaries never log in"
+  statement across the docs has been scoped to the eligibility side specifically — the
+  marketplace is the deliberate exception, not a contradiction. See Resolved below.
 
 ---
 
-## Needs reconciling — contradictions in the new doc set itself
-
-Found while converting; **not resolved here**, flagged per the "never silently decide"
-rule. Each is noted inline in the doc it appears in too.
+## Needs reconciling — still open
 
 1. **Embeddings dimension conflicts with an already-shared decision.** The delivered SQL
    schema uses `vector(768)` throughout, on the assumption Groq or `nomic-embed-text`
@@ -95,30 +98,11 @@ rule. Each is noted inline in the doc it appears in too.
    (`BAAI/bge-base-en-v1.5` or `all-mpnet-base-v2` are the standard picks) so the schema
    needs no migration. Recommending this, not silently doing it — confirm before
    `packages/rag` gets built against either number.
-2. **Is the Marketplace Portal staff-facing or a beneficiary app?** Architecture.md's own
-   §4 opening line says "Both portals are staff-facing... beneficiaries do not have
-   accounts," then §4.2 two paragraphs later says the marketplace "runs on the
-   beneficiary app rather than a staff portal" and "staff are not involved." These can't
-   both be true. [Marketplace_Spec.md](docs/Marketplace_Spec.md) is detailed, internally
-   consistent, and unambiguous: beneficiary-facing, no staff, conversational listing
-   creation by voice or text. Treating that as authoritative. This is the single biggest
-   scope change for *my own build* — `apps/marketplace-portal` is not a staff review tool
-   anymore, it's the thing a beneficiary opens themselves.
-3. **How does an account-less beneficiary access only their own listing?** Follows from
-   #2. The eligibility side is explicit that "there is no beneficiary login, password
-   reset, or account recovery anywhere in the system" (SRS §7.5) — but the marketplace
-   app needs *some* way to know which listing belongs to which person, without a
-   traditional account. Most likely answer is a phone-number-based lightweight identifier
-   (no password), but nothing says so explicitly yet. Needs an answer before
-   `apps/marketplace-portal` auth can be built.
-4. **Team_Work_Division.md §4.1 wasn't updated to match its own §4.1 two paragraphs
-   later.** Responsibilities still say "venture lifecycle and fee rules" and "grace-period
-   sweep" — the very next subsection in the same document is titled "No Fees." Corrected
-   in this file's scope section below; flagged inline in that doc too.
-5. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
+2. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
    prose says "Nine tables" then lists ~21 once marketplace tables are counted, and the
-   actual SQL says 11 (core) + 9 (marketplace) = 20. Not load-bearing, just sloppy —
-   treat the SQL files as ground truth for anything structural.
+   actual SQL says 11 (core) + 10 (marketplace, after the auth tables added) = 21. Not
+   load-bearing, just sloppy — treat the SQL files as ground truth for anything
+   structural.
 
 ---
 
@@ -129,12 +113,12 @@ rule. Each is noted inline in the doc it appears in too.
 1. **Main Platform Portal** (React+Vite, P4, staff-facing) — profile entry, the match
    review worklist, the outreach list, verification, the ranked candidate pool +
    allocation, department view. All staff-operated; a beneficiary never sees this screen.
-2. **Marketplace app** (React+Vite, me — folder still named `marketplace-portal`,
-   see Needs Reconciling #2) — beneficiary-facing, conversational listing creation, match
-   results, no staff involvement.
+2. **Marketplace app** (React+Vite, me — folder still named `marketplace-portal`)
+   — beneficiary-facing, phone + SMS one-time-code login, conversational listing
+   creation, match results, no staff involvement.
 3. **API Layer** (FastAPI on Render, P3) — the only thing either app talks to; profile
-   CRUD, **staff auth only** (Supabase Auth, role-gated), exposes matching + workflow
-   results.
+   CRUD, **two separate auth flows** (staff: Supabase Auth email+password, role-gated;
+   marketplace: phone + SMS OTP), exposes matching + workflow results.
 4. **Discovery Engine** — hard-rule elimination (plain Python) + XGBoost confidence
    scoring. Suggestions only, never an application, never allocates. P1,
    `packages/eligibility`. Runs alongside, but structurally separate from, the
@@ -253,8 +237,10 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
 - **No fees, no venture lifecycle.** The old registration-fee/grace-period/donation-ledger
   model is **gone entirely** — replaced by an optional voluntary donation with no
   schedule, and "zakat graduation" (mustahiq → donor) tracked as a reportable metric.
-- **Marketplace app** — React + Vite, beneficiary-facing (see Needs Reconciling #2),
-  shared palette/logo/typography with the Main Platform Portal.
+- **Marketplace app** — React + Vite, beneficiary-facing, phone + SMS one-time-code
+  login (own auth model, resolved — see `beneficiary_app_accounts`/`login_otps` in
+  `packages/data/schema/al_khidmat_marketplace_schema.sql`), shared palette/logo/
+  typography with the Main Platform Portal.
 - **Dummy data** — applicant + store-listing profiles for the demo.
 - **Triggers I own (renumbered and re-scoped — do not reuse the old numbers from
   memory):** 7 (listing created/edited → marketplace matching, notify both parties by
@@ -264,7 +250,9 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
 
 **Not mine:** cross-program discovery + prioritization rubric/XGBoost (P1), Supabase
 schema (P3, **delivered**), FastAPI + dedup (CNIC-first, then RapidFuzz) + Render deploy +
-staff auth (P3), NLP/assistant + Main Portal (P4).
+staff auth (P3). Marketplace OTP verification (the send-code/check-code mechanics) is
+P3's to build against the schema; the app-side login flow that calls it is mine.
+NLP/assistant + Main Portal (P4).
 
 **I depend on:** P3's schema (**now real** — `packages/data/schema/`) and P3's deploy.
 **Depends on me:** the eligibility engine and the conversational assistant both call my
@@ -283,7 +271,8 @@ RAG service. If it slips, two people stall.
 | RAG | LlamaIndex over pgvector |
 | Triggers | LlamaIndex Workflows (typed, event-driven steps) |
 | API | FastAPI + Pydantic v2 (P3 owns) |
-| Auth | Supabase Auth — staff only (P3 owns) |
+| Auth — staff | Supabase Auth, email + password (P3 owns) |
+| Auth — marketplace | Phone + SMS one-time code, no password (P3: schema/OTP; me: app flow) |
 | Hosting | Render free tier + Render cron |
 | Frontend | React + Vite |
 
@@ -294,7 +283,9 @@ Everything must run on free tiers. No GPU anywhere.
 ## Hard constraints (from the SRS — do not violate)
 
 - **Recommend, never auto-enroll.** Departments make the final call.
-- **Never contact a beneficiary directly.** Staff reviews every match first.
+- **Never contact a beneficiary directly — eligibility side only.** Staff reviews every
+  match first there. The marketplace is the deliberate exception: it notifies both
+  parties directly, since introducing two businesses carries no allocation decision.
 - **Fairness is structural.** `entry_path` recorded for audit, never used in ranking.
 - **No fees in the marketplace, anywhere.** Voluntary donation only.
 - **No web scraping.** Retrieval runs only over uploaded/mock documents.
@@ -331,10 +322,16 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
   no LLM in the scoring loop at all. Match reasons are built from the rule/score
   breakdown. This was open question territory before; now it's just how the system
   works.
-- **Auth model, eligibility side: fully specified.** Supabase Auth, staff-only, three
-  roles (field_officer / department_admin / super_admin) gating criteria-edit and
-  department visibility. (The marketplace side is a separate, still-open question — see
-  Needs Reconciling #3.)
+- **Auth model: fully specified, both sides.** Eligibility side: Supabase Auth, staff
+  only, three roles (field_officer / department_admin / super_admin) gating criteria-edit
+  and department visibility. Marketplace: phone number + SMS one-time code, no password —
+  the person's number is already on file from their loan application, links to their
+  existing `beneficiary_profiles` row via `beneficiary_app_accounts`, and a number change
+  is staff-assisted at a facilitation centre rather than self-service.
+- **Marketplace Portal is beneficiary-facing, not a staff tool — confirmed, not just my
+  read of Marketplace_Spec.** Every blanket "beneficiaries never log in" statement across
+  the docs has been rewritten to scope it to the eligibility side; the marketplace is the
+  deliberate exception.
 - **Notification channel: SMS + email, both parties, no phone calls.** Specified in
   Marketplace_Spec §7.
 - **Marketplace model disambiguation: resolved, and simpler than either option I'd been
@@ -369,11 +366,10 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 4. **The seven program domains are still never listed.** SRS §1 still only names four as
    examples. Blocks Data Engineering's synthetic dataset and Eligibility's "consistent
    across all seven domains" requirement.
-5. **Marketplace Portal: staff tool or beneficiary app?** See Needs Reconciling #2 — this
-   one is mine to build, so it blocks me specifically, but it's a whole-team-visible
-   contradiction between two of the delivered docs.
-6. **How does an account-less beneficiary access their own marketplace listing?** See
-   Needs Reconciling #3.
+5. ~~Marketplace Portal: staff tool or beneficiary app?~~ — **resolved**, see Resolved
+   above.
+6. ~~How does an account-less beneficiary access their own marketplace listing?~~ —
+   **resolved**, see Resolved above.
 
 ### Mine to decide — surfacing per the "never silently decide" rule, not deciding alone
 
@@ -394,7 +390,7 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 10. `consent_flags`/`consent_given` on Beneficiary Profile — schema field exists,
     semantics (what consent, gates what behavior) never defined.
 11. **Doc-hygiene:** table counts disagree across Architecture.md and the SQL files (see
-    Needs Reconciling #5) — not load-bearing, just worth a cleanup pass sometime.
+    Needs Reconciling #2) — not load-bearing, just worth a cleanup pass sometime.
 
 ---
 
@@ -402,8 +398,8 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 
 ```
 apps/main-portal/            Person 4 — React + Vite, staff-facing
-apps/marketplace-portal/     Me       — React + Vite, beneficiary-facing (see Needs Reconciling #2)
-services/api/                Person 3 — FastAPI, staff auth, shared by both apps
+apps/marketplace-portal/     Me       — React + Vite, beneficiary-facing, phone+OTP login
+services/api/                Person 3 — FastAPI, two auth flows, shared by both apps
 packages/rag/                Me       — shared RAG layer + criteria extraction (build first, day one)
 packages/marketplace/        Me       — 3 business models, matching, no fees
 packages/eligibility/        Person 1 — discovery engine + prioritization rubric

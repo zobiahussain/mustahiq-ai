@@ -43,8 +43,11 @@ create table departments (
 
 -- ============================================================
 -- 2. STAFF USERS
--- The ONLY people who log in. Beneficiaries have no accounts,
--- no passwords, and no login flow anywhere in the system.
+-- The only authenticated actor on the ELIGIBILITY side of the
+-- platform -- no beneficiary accounts, passwords, or login flow
+-- here. The marketplace module has its own, separate access
+-- model (beneficiary_app_accounts + login_otps, phone + SMS
+-- one-time code) -- see al_khidmat_marketplace_schema.sql.
 -- ============================================================
 
 create table staff_users (
