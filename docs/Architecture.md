@@ -85,9 +85,11 @@ AL-KHIDMAT STAFF                        BENEFICIARIES
 ```
 
 > **Table count note:** this diagram says "13 tables," §5 below says "Nine tables" then
-> lists twelve core tables plus nine marketplace tables, and the actual delivered SQL
-> (`al_khidmat_core_schema.sql`) says **11 tables** for the core schema. The SQL files are
-> the ground truth — treat every table count in this prose as approximate. See CLAUDE.md.
+> lists twelve core tables plus nine marketplace tables, and the actual delivered SQL says
+> **11 tables** for the core schema and **13** for the marketplace schema (after
+> `beneficiary_app_accounts`/`login_otps`/`microfinance_loans`/`marketplace_invitations`
+> were added). The SQL files are the ground truth — treat every table count in this prose
+> as approximate. See CLAUDE.md.
 
 > **Embeddings note:** this document's stack table and code sample (§3.2) say Groq
 > provides embeddings. It doesn't — verified directly against Groq's API reference; no
@@ -426,10 +428,18 @@ documents as `al_khidmat_core_schema.sql` (11 tables) and `al_khidmat_marketplac
   audit trail for each allocation run.
 - **Duplicate Flag** — id, profile_a_id, profile_b_id, similarity_score, matched_on,
   status, reviewed_by_staff_id, reviewed_at
-- **Marketplace tables** — store_listings, listing_participants, venture_lineage,
-  marketplace_matches, logistics_routes, trade_categories, notifications, donations,
-  graduation_events. Specified in full in [Marketplace_Spec.md](Marketplace_Spec.md) and
-  its own schema file.
+- **Marketplace tables** — beneficiary_app_accounts, login_otps, trade_categories,
+  microfinance_loans, marketplace_invitations, store_listings, logistics_routes,
+  listing_participants, venture_lineage, marketplace_matches, notifications, donations,
+  graduation_events (13 tables). Specified in full in
+  [Marketplace_Spec.md](Marketplace_Spec.md) and its own schema file.
+  `microfinance_loans` is the marketplace's eligibility gate — a thin record of loan
+  outcome, not the loan application itself, which lives in the core schema's
+  `applications` table. Gated on `trade_category_id is not null` (null covers the
+  Liberation Loan and any other non-business purpose) and `status in ('approved',
+  'disbursed')` — eligibility starts at approval, not disbursement, since the trade
+  category is already decided by then. `marketplace_invitations` is a convenience layered
+  on top — an automatic SMS invitation, never a requirement to sign up.
 
 One shared Match Record structure serves both eligibility and marketplace matches, which
 lets the matching engine, the API, and the workflow layer stay identical for both use

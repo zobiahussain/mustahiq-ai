@@ -25,7 +25,8 @@ on the beneficiary app, and it operates without staff involvement.
 - Al-Khidmat introduces; it does not broker. Terms, pricing, delivery and disputes are
   entirely between the two businesses.
 - Participation is never automatic. A person joins the marketplace when they choose to,
-  after their loan is disbursed.
+  once their loan is **approved** — they don't have to wait for disbursement, since the
+  trade category (and so the eligibility decision) is already settled by then.
 - Premium ranking was considered and deliberately rejected. Charging for visibility in a
   charity marketplace means the poorest are seen least, which contradicts the purpose —
   and routing the fee to donations does not fix it.
@@ -35,10 +36,51 @@ on the beneficiary app, and it operates without staff involvement.
 1. A person applies for a microfinance loan at a facilitation centre. They must ask;
    microfinance is never offered proactively, because a loan creates a debt obligation.
 2. Staff takes the application on the portal and records which of Al-Khidmat's four loan
-   products funds it.
-3. The loan is approved and disbursed.
-4. Later, when they are ready, the beneficiary joins the marketplace on the app
-   themselves. This is not tied to disbursement.
+   products funds it — **and now also picks a trade category** (one of the ten in
+   `trade_categories`, or "Not a business" for bail/medical/debt-relief loans, including
+   the Liberation Loan) at the same moment they already record what the loan is for. This
+   is a new field on the loan application, proposed by this module specifically to make
+   the gate below possible — it doesn't exist in Al-Khidmat's process today.
+3. The loan is **approved** — Al-Khidmat's loan system records the outcome, in this
+   schema a row in `microfinance_loans` (`loan_reference`, `loan_product`,
+   `trade_category_id`, `stated_purpose_text`, `status`, `amount_disbursed`,
+   `disbursed_on`), created with `status = 'approved'`, `amount_disbursed`/`disbursed_on`
+   still null. The row is later updated to `status = 'disbursed'` once money actually
+   moves — that update doesn't change marketplace eligibility, since approval already did.
+4. Whenever they're ready — from the moment they're approved onward — the beneficiary
+   joins the marketplace on the app themselves.
+
+**Eligibility gate.** The marketplace is not public — the app is not the eligibility
+side, so it cannot re-run the assessment that already happened. What it checks instead:
+does a `microfinance_loans` row exist for this beneficiary with `status` `approved` or
+`disbursed`, and does that row have a `trade_category_id` set. Not income, not household
+size, not programme criteria — just "did Al-Khidmat decide to finance them into one of the
+ten trade categories."
+
+`trade_category_id` being `null` is what excludes a loan that doesn't lead to a business —
+this covers the Liberation Loan, but also bail, medical, or debt-relief loans generally,
+without any logic needing to check the loan product's name specifically. That beneficiary
+can still log in — the gate isn't about denying them the app — but they're never offered
+the listing-creation flow, since there's nothing to list.
+
+`status` matters on the other end too: `defaulted` or `rejected` don't pass the gate — no
+longer eligible, or never was. `defaulted` is stronger than just closing the gate to new
+signups — an *existing* listing gets deactivated too (see the schema's reference query J),
+since a defaulted loan is a reputational fact the marketplace can't just ignore for
+someone already listed.
+
+A phone number with no matching beneficiary record at all is rejected before an OTP is
+even sent — the marketplace only ever authenticates people already on file from a loan
+application, never a fresh signup from the general public.
+
+**The invitation problem.** A background eligibility check tells the *system* someone
+qualifies, but nothing tells the *person* the app exists — staff mentioning it at the
+loan desk is not something the system can rely on. So the moment a `microfinance_loans`
+row is written with a `trade_category_id` set, an SMS goes out automatically with a short
+signup code (`marketplace_invitations`). That code is a convenience and an invitation,
+**never a requirement** — if it's lost or never arrives, phone + OTP alone still gets
+someone in, because the real gate is the eligibility check above, not the code. It also
+gives a genuine adoption metric: invitations sent versus signups completed.
 
 ### 2.1 Login — Phone + SMS One-Time Code
 
@@ -60,46 +102,91 @@ Loan product and trade category are independent. A tailor funded under a Small B
 Loan and a tailor funded under Loan for Orphan's Mother are identical to the marketplace —
 it reads what the business does and ignores which product financed it.
 
-One exception: a Liberation Loan does not lead to a business, so it produces no listing.
+One exception: any loan recorded with no trade category — a Liberation Loan being the
+clearest example — does not lead to a business, so it produces no listing.
 
 ## 3. Creating a Listing
 
-The person opens the app. A conversational assistant asks what they do, in plain
-language. They answer by voice or keyboard, in whatever language they speak. The model
-structures the answer into a listing and reads back what it understood for confirmation.
+The person opens the app, already known to it (`GET /me/context` returns their name,
+district, cluster, trade category and stated purpose from the loan record — never asked
+again). A conversational assistant asks what they do, one open prompt plus a handful of
+quick-select chips for what they're looking for (inputs / workers / a partner / work —
+setting the `seeking_*` flags directly). They answer by voice or keyboard, in whatever
+language they speak — this app is built around Urdu, not English, since that's the actual
+language of the person using it. The audio is transcribed, then one structured-extraction
+call turns the transcript into listing fields and reads back what it understood, in their
+own language, for confirmation — every line individually editable before anything saves.
 
 There is no form. This is the whole onboarding, and it is the same experience for
 everyone — there is no separate path based on assumptions about literacy or loan size.
+
+If a required field is still missing after extraction, the assistant asks **one targeted
+follow-up question** (not a repeat of the open prompt) — at most twice before falling back
+to letting them just type the answer directly, so nobody gets stuck in a question loop.
+
+**English internally, their language everywhere they see it.** The platform-wide "English
+only" rule (SRS §7.2) governs the *matching* pipeline, not what a beneficiary is required
+to speak — every free-text field a beneficiary can see or search on is captured in both
+forms: an `_en` version (what gets embedded and matched — one predictable representation,
+regardless of what language came in) and an `_original` version (what they actually said,
+shown back to them and to whoever they match with). Nobody has to read or write English to
+use this app.
 
 ### 3.1 What a listing captures
 
 | Field | Purpose |
 |---|---|
-| Trade category | One of ten reference categories; drives matching |
-| Product or service | Free text, embedded for semantic matching |
-| Skills | What this business can do — used for employment matching |
+| Trade category | One of ten reference categories; drives matching. Already known from the loan record — not re-asked |
+| Product or service | `_en` (embedded, matched) + `_original` (shown to people) — see above |
+| Skills | Same `_en`/`_original` split — what this business can do, used for employment matching |
 | Role | supplier, producer, retailer, service, or logistics |
-| Capacity and price range | Context for whether a match is workable |
+| Capacity and price range | Context for whether a match is workable; optional, can stay blank |
 | Cluster and district | Proximity signal; cluster is Al-Khidmat's own operating unit |
 | Seeking flags | inputs, workers, a partner, or work — which models this listing joins |
-| Travel willingness | Asked per model; see 3.2 |
+| Remote-capable | Asked once, up front; see 3.2 — does the *work* need someone present? |
+| Physical output | Asked once, up front; see 3.2 — does a *good* need transporting? |
+| Travel willingness | Asked per model, only where its gate is open; see 3.2 |
 | Women-led | A flag, not a category — it cuts across all ten |
 
-### 3.2 Travel willingness is asked per model
+### 3.2 Two gates before travel willingness, not one
 
-A single transportability flag does not work, because a different thing moves in each
-model.
+Before any of the per-model travel questions, the assistant asks two questions that can
+each skip part of them — **remote-capable** and **physical output** are independent,
+because a person's presence and a good's movement don't always travel together:
 
-| Model | What has to move | Question asked |
+- **"Can you do this work remotely, or does it need to be in person?"** — gates whether
+  relocating/partnering-outside-district ever gets asked.
+- **"Does this involve a physical product that has to be delivered or picked up?"** —
+  gates whether delivering-outside-area ever gets asked.
+
+Neither is inferred from trade category — a tailor taking custom orders by post is
+remote-capable even though tailoring generally is not, and category alone can't tell the
+two apart. The clearest single-flag example is freelancing/technology: a web developer in
+Lahore and a client in Karachi never meet at all, so relocating doesn't apply, and there's
+no physical output either. But the two can also split: a remote consultant who ships
+physical sample kits is remote-capable *and* has a physical output — the work needs no
+travel, the kits still need delivery. A supplier selling design files needs neither.
+
+| | Proximity filter | Distance penalty |
 |---|---|---|
-| Supply chain | Goods | Will you deliver outside your area? |
-| Employment | The person | Would you relocate for work? |
-| Joint venture | Both parties, permanently | Would you partner outside your district? |
+| Remote-capable (work) | None | None on relocation/partnering — full score (×1.0) |
+| No physical output (goods) | None | None on delivery — full score (×1.0) |
+| Physical, willing to travel | None | Applies (see §5, proximity weighting) |
+| Physical, not willing | Own cluster only | n/a |
 
-There is no transportability lookup table by trade category. The person is asked
-directly, because they know and a table would only guess — tailoring is local as a
-service but its finished garments travel fine, and grocery splits by product rather than
-by category.
+The per-model travel question only gets asked when its own gate is still open, because a
+different thing moves in each model — and it's a different gate for goods than for people:
+
+| Model | What has to move | Gate | Question asked |
+|---|---|---|---|
+| Supply chain | Goods | Physical output = true | Will you deliver outside your area? |
+| Employment | The person | Remote-capable = false | Would you relocate for work? |
+| Joint venture | Both parties, permanently | Remote-capable = false | Would you partner outside your district? |
+
+There is no transportability lookup table by trade category here either — same reasoning
+as the two gates above: tailoring is local as a service but its finished garments travel
+fine, and grocery splits by product rather than by category, so the person is asked
+directly.
 
 Relocation willingness is a plain yes or no, never a declared radius. Someone might accept
 Lahore to Islamabad but not Lahore to Karachi, and that depends on the pay, the city, and
@@ -133,12 +220,15 @@ Fires whenever a listing is created or edited.
    joint venture candidate looks only at others who opted in.
 2. **Distance eligibility** — a goods match needs willingness to deliver; an employment
    match needs willingness to relocate. Applied as a filter, so nobody is shown matches
-   they have already ruled out.
+   they have already ruled out. Skipped for a supply-chain match when the listing's
+   output isn't physical, and for an employment or joint-venture match when the listing
+   is remote-capable (§3.2) — in each case, nothing to check distance against.
 3. **Vector similarity** over the listing text ranks whatever survives the filters.
 4. **Proximity weighting** reorders the result: same cluster × 1.00, adjacent district ×
-   0.85, same province × 0.70, elsewhere × 0.50.
+   0.85, same province × 0.70, elsewhere × 0.50 — except where step 2's gate was open,
+   which stays at × 1.00 regardless of where the other side is.
 
-The search always covers the entire existing pool, not only recent listings.
+The matching pool always covers every existing listing, not only recent ones.
 
 Proximity is a weight, not a filter. A strong cross-cluster match can outrank a weak local
 one — a well-suited leather supplier two districts away is worth more than a poor one
@@ -157,9 +247,32 @@ physically move and transport has to be arranged.
 ### 5.2 The delayed match
 
 A cobbler lists on Monday and no supplier exists yet, so nothing happens. A supplier lists
-on Friday, the search runs against everything already stored, and finds Monday's cobbler.
+on Friday, matching runs against everything already stored, and finds Monday's cobbler.
 The trigger is Friday's listing, not a scheduled scan — which is why matching always
-searches the full pool rather than only new arrivals.
+runs against the full pool rather than only new arrivals.
+
+### 5.3 Search is a separate thing from matching, and deliberately unfiltered
+
+Everything above (§5–5.2) is *automatic* matching — the system pushing candidates at a
+listing when it's created or edited. A beneficiary can also search directly, at any time,
+for something they need — a supplier for their next batch of leather, a rickshaw operator,
+a tailor to hire.
+
+**Search covers every cluster, with no proximity filter and no willingness check at all —
+even for a listing that isn't remote-capable and never said it would travel or deliver.**
+This is a deliberate difference from automatic matching, not an oversight:
+
+- Search is intent-driven. Someone searching already knows what they need and is
+  prepared to judge the distance themselves — a Sukkur cobbler searching for leather
+  suppliers wants to see every supplier that exists, including a strong one in Hyderabad,
+  and decide for himself whether the trip or delivery cost is worth it.
+- Automatic matching is push-driven — the system is choosing what to interrupt someone
+  with unprompted, which is exactly where the willingness/remote-capable flags earn their
+  keep: they keep the system from pushing a cross-country match at someone who has
+  already said, in advance, that they wouldn't take it.
+
+In short: **the flags constrain what gets pushed automatically, never what a person can
+find by looking for it themselves.**
 
 ## 6. Logistics as a Service
 

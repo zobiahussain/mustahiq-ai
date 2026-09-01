@@ -74,9 +74,10 @@ earlier revision:
   a human confirms before they take effect. Full detail:
   [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md).
 - **A real schema shipped.** `packages/data/schema/al_khidmat_core_schema.sql` (11
-  tables) and `al_khidmat_marketplace_schema.sql` (10 tables, now including
-  `beneficiary_app_accounts`/`login_otps`) — see Needs Reconciling below, since it
-  assumes an embeddings provider we already ruled out.
+  tables) and `al_khidmat_marketplace_schema.sql` (13 tables, now including
+  `beneficiary_app_accounts`/`login_otps`/`microfinance_loans`/`marketplace_invitations`)
+  — see Needs Reconciling below, since it assumes an embeddings provider we already ruled
+  out.
 - **Two front ends, two access models — resolved and now consistent everywhere.** Staff
   portal: email + password, staff only. Marketplace app: phone + SMS one-time code,
   beneficiary-facing, no staff at all. Every blanket "beneficiaries never log in"
@@ -99,8 +100,9 @@ earlier revision:
    needs no migration. Recommending this, not silently doing it — confirm before
    `packages/rag` gets built against either number.
 2. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
-   prose says "Nine tables" then lists ~21 once marketplace tables are counted, and the
-   actual SQL says 11 (core) + 10 (marketplace, after the auth tables added) = 21. Not
+   prose says "Nine tables" then lists ~24 once marketplace tables are counted, and the
+   actual SQL says 11 (core) + 13 (marketplace, after `beneficiary_app_accounts` /
+   `login_otps` / `microfinance_loans` / `marketplace_invitations` were added) = 24. Not
    load-bearing, just sloppy — treat the SQL files as ground truth for anything
    structural.
 
@@ -140,7 +142,7 @@ earlier revision:
    trigger. Answers "does this person qualify for anything else" / "what documents does
    this program need," always with a citation.
 8. **Data Layer** (Supabase Postgres + pgvector, schema delivered by P3) — 11 core tables
-   + 9 marketplace tables. `beneficiary_profiles` carries **no embedding** — purely
+   + 13 marketplace tables. `beneficiary_profiles` carries **no embedding** — purely
    structured. See `packages/data/schema/`.
 9. **External: Groq API** — generation only (chat completions, JSON-mode). Not
    embeddings — see Needs Reconciling #1.
@@ -233,7 +235,46 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
   Plus logistics (rickshaw/three-wheeler operators) as a participant role. Matching:
   complementary-role filter → distance-eligibility filter → vector similarity → proximity
   re-weighting (same cluster ×1.00 / adjacent district ×0.85 / same province ×0.70 /
-  elsewhere ×0.50). Full spec: [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md).
+  elsewhere ×0.50). The distance-eligibility step is gated by **two independent flags**
+  on a listing, not one — `is_remote_capable` (does the *work* need someone physically
+  present — skips relocate/partner-outside-district checks) and `output_is_physical`
+  (does a *good* need transporting — skips the deliver-outside-area check). A remote
+  consultant who ships physical sample kits is remote-capable but still has a physical
+  output; each gate stays ×1.00 in proximity weighting independently. This
+  automatic-match pipeline is distinct from **search**, which a beneficiary runs
+  themselves and which applies none of these filters — search is intent-driven, the flags
+  only constrain what gets pushed unprompted. Full spec:
+  [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md).
+- **Marketplace signup gate: `microfinance_loans`, not `applications`.** The eligibility
+  side's `applications` table tracks candidacy for any programme and can't double as a
+  loan record without overloading it. A dedicated table
+  (`packages/data/schema/al_khidmat_marketplace_schema.sql`) is the actual gate: a phone
+  number only gets an OTP if it matches a `beneficiary_profiles` row, and full app access
+  (the listing-creation flow specifically) requires a `microfinance_loans` row with
+  `status` `approved`/`disbursed` **and** `trade_category_id` set — eligibility starts at
+  approval, not disbursement, since the trade category is already decided by then; no
+  reason to make someone wait on a banking delay. `trade_category_id` is populated from a
+  **new field this module requires on the loan application** — the loan officer picks a
+  category (or "Not a business") at the same moment they record the loan's purpose; this
+  doesn't exist in Al-Khidmat's process today and needs saying out loud in the demo.
+  `trade_category_id is null` is what excludes a loan that doesn't lead to a business
+  (Liberation Loan and similar) — that beneficiary can log in but is never offered listing
+  creation. `defaulted` closes the gate AND deactivates any listing they already have
+  (schema reference query J) — a reputational fact, not just a future-signup block. On top
+  of this, `marketplace_invitations` auto-sends an SMS signup code the moment a qualifying
+  loan is recorded — solves "nothing tells the person the app exists," but is a
+  convenience only, never required to sign up.
+- **API contract, at least for my slice, is now concrete.** Seven endpoints for the
+  marketplace app's login + listing-creation flow (`POST /auth/request-otp`,
+  `POST /auth/verify-otp`, `GET /me/context`, `POST /listing/transcribe`,
+  `POST /listing/extract`, `POST /listing`, plus the internal embed→match→notify step) —
+  designed and confirmed 1 Sep 2026. This is real progress on Open Question 1 below, for
+  my module specifically; the eligibility-side contract is still someone else's to define.
+- **"English only" (SRS 7.2) is about the matching pipeline, not what a beneficiary has
+  to speak.** Marketplace_Spec.md already committed to "voice or text, in whatever
+  language they speak" — so every listing field a beneficiary can see gets an `_en`
+  version (embedded, matched) and an `_original` version (their actual words, shown back
+  to them and their match). Written into `store_listings` and Marketplace_Spec.md §3.
 - **No fees, no venture lifecycle.** The old registration-fee/grace-period/donation-ledger
   model is **gone entirely** — replaced by an optional voluntary donation with no
   schedule, and "zakat graduation" (mustahiq → donor) tracked as a reportable metric.
@@ -352,10 +393,12 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 
 ### Needs a whole-team decision
 
-1. **API contract.** Only `POST /profile` is specified anywhere. Every endpoint,
-   request/response shape, and error format needs agreement before `services/api`, both
-   apps, and my packages can build against a stable target in parallel — this is the
-   whole premise the build order depends on. Unchanged by this revision.
+1. **API contract.** Only `POST /profile` is specified anywhere for the eligibility side —
+   still needs whole-team agreement before `services/api` and `apps/main-portal` can build
+   in parallel. **My own marketplace slice is no longer blocked on this** — see Resolved,
+   `POST /auth/request-otp`, `POST /auth/verify-otp`, `GET /me/context`,
+   `POST /listing/transcribe`, `POST /listing/extract`, `POST /listing` are locked for the
+   app-side login + listing-creation flow specifically.
 2. **Embeddings dimension.** See Needs Reconciling #1 above — recommending a 768-dim
    local model to match the delivered schema without a migration, needs confirming.
 3. **Trigger execution model — sync or async?** Still unanswered. Registration-time

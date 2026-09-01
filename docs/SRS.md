@@ -528,8 +528,10 @@ enrolls anyone automatically.
 
 ### 11.4 Marketplace Participation
 
-After a microfinance loan is disbursed, the beneficiary may join the marketplace on the
-app when they choose to.
+Once a microfinance loan is **approved** (not necessarily disbursed yet — the trade
+category is decided at approval, before money moves, so there's no reason to make someone
+wait on a banking delay), the beneficiary may join the marketplace on the app when they
+choose to.
 
 A conversational assistant creates the listing from voice or typed input, in whatever
 language they speak.
