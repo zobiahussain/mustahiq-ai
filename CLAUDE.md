@@ -268,11 +268,16 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
   free text from the single text-box card and *enriches* it for matching (e.g. "سلائی" →
   "tailoring, stitching shalwar kameez and uniforms, garment production"), returning both
   `_en` (embedded) and `_original` (shown to people) — real value, since a thin phrase
-  makes a thin embedding. The same call also suggests `is_remote_capable`, but only as a
-  pre-filled, one-tap-overridable default — never trusted un-reviewed, since it silently
-  controls whether proximity filtering runs at all for that listing. `output_is_physical`
-  isn't LLM-touched. No schema change was needed — every field already existed. Full
-  design: Marketplace_Spec.md §3.
+  makes a thin embedding. `is_remote_capable` and `output_is_physical` are BOTH plain,
+  always-asked taps, not LLM-touched at all — an earlier draft had the LLM suggest
+  `is_remote_capable`, reverted, since it silently controls whether an entire
+  distance-filter step runs for the listing (see §5 step 2 — "distance eligibility" is a
+  genuine WHERE-clause filter, not a ranking weight; only step 4, proximity re-weighting,
+  is a weight). That same filter/weight distinction is why `will_partner_outside_district`
+  needed fixing, not just flagging: an earlier card-5 visibility rule skipped it for
+  partner-only listings, which would have silently, permanently excluded them from every
+  cross-cluster joint-venture match. No schema change needed anywhere here — every field
+  already existed. Full design: Marketplace_Spec.md §3.
 - **"English only" (SRS 7.2) is about the matching pipeline, not what a beneficiary has
   to speak.** Marketplace_Spec.md already committed to "voice or text, in whatever
   language they speak" — so every listing field a beneficiary can see gets an `_en`

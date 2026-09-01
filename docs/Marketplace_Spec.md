@@ -122,8 +122,8 @@ Five cards:
 | 1. Role | Tap, single-select | `role` |
 | 2. Looking for | Tap, multi-select | `seeking_inputs` / `seeking_workers` / `seeking_partner` / `seeking_work` |
 | 3. What you make or sell | **The one text box**, Urdu or English | Goes to the LLM call below |
-| 4. Confirm | Tap — pre-filled from card 3's LLM output, one tap to override | `is_remote_capable`, `output_is_physical` |
-| 5. Details — shown only if card 2 selected materials, worker, or work (skipped for partner-only) | Two optional numbers + one travel tap | `monthly_capacity`, `price_range`, `will_deliver_outside_area` (materials) or `will_relocate_for_work` (work) |
+| 4. Two direct questions | Tap, always asked, no model involved | `is_remote_capable`, `output_is_physical` |
+| 5. Details — shown whenever card 2 selected anything (materials, worker, partner, or work) | Two optional numbers + the travel tap(s) relevant to what was selected | `monthly_capacity`, `price_range`, `will_deliver_outside_area` (materials), `will_relocate_for_work` (work), `will_partner_outside_district` (partner) |
 
 `is_women_led` is a small toggle, not its own card — folds into card 1 or a final review
 screen, doesn't need the friction of a dedicated step.
@@ -150,23 +150,26 @@ Return JSON:
      semantic matching — include the craft, typical outputs, and
      related terms a supplier or employer would search for",
   "product_or_service_original": "their exact words unchanged",
-  "skills_en": "comma-separated skills in English",
-  "is_remote_capable": bool
+  "skills_en": "comma-separated skills in English"
 }}
 """
 ```
 
-`is_remote_capable` comes back as a *suggestion*, not a final answer — card 4 shows it
-pre-selected and lets a single tap flip it. This field silently controls whether proximity
-filtering runs at all for the listing, so an unreviewed model guess is a worse trade than
-one extra tap. `output_is_physical` isn't LLM-touched at all (the prompt doesn't cover it)
-— plain tap, defaults to true.
+`is_remote_capable` is deliberately **not** in this prompt. An earlier draft had the LLM
+suggest it as a pre-filled default; reverted, because this field silently controls whether
+an entire distance/proximity filter runs for the listing at all (see below) — too much to
+hang on a model guess when a plain tap costs almost nothing. It's asked directly on card 4,
+same as `output_is_physical`, which was never LLM-touched to begin with.
 
-One consequence of skipping card 5 for partner-only listings, worth being explicit about:
-a joint-venture-only listing never gets asked `will_partner_outside_district` in this
-build, so it stays `false` by default. Not a hard blocker — proximity is a weight, not a
-filter (§5) — but it means such a listing quietly ranks lower on distant matches unless
-also marked remote-capable on card 4.
+**On `will_partner_outside_district` — this needed fixing, not just noting.** The gate
+described in §3.3 below is a genuine *filter*, not just a ranking penalty: a candidate who
+hasn't opted into cross-cluster matching is excluded from appearing at all, the same way
+an unwilling supplier or worker is (§5, step 2, "Distance eligibility"). An earlier version
+of this design skipped card 5 entirely for partner-only listings, which meant
+`will_partner_outside_district` could never be asked and would silently stay `false`
+forever — permanently excluding that listing from every cross-cluster joint-venture match,
+not merely ranking it lower. Fixed: card 5 now shows whenever card 2 selected *anything*,
+including partner-only, asking just the one travel question relevant to what was selected.
 
 **English internally, their language everywhere they see it.** The platform-wide "English
 only" rule (SRS §7.2) governs the *matching* pipeline, not what a beneficiary is required
@@ -185,9 +188,9 @@ them and to whoever they match with). Nobody has to read or write English to use
 | Capacity and price range | Optional, can stay blank — card 5 |
 | Cluster and district | Proximity signal; already known from the loan record |
 | Seeking flags | inputs, workers, a partner, or work — card 2 |
-| Remote-capable | LLM-suggested, one-tap override — card 4 |
-| Physical output | Plain tap, not LLM-touched — card 4 |
-| Travel willingness | Card 5, only for the seeking flags that need it |
+| Remote-capable | Plain tap, always asked, no model involved — card 4 |
+| Physical output | Plain tap, always asked, no model involved — card 4 |
+| Travel willingness | Card 5, shown for any seeking flag — asks only what's relevant |
 | Women-led | A flag, not a category — small toggle, not its own card |
 
 ### 3.3 Two gates before travel willingness, not one
@@ -212,7 +215,7 @@ kits still need delivery. A supplier selling design files needs neither.
 |---|---|---|---|
 | Supply chain | Goods | Physical output = true | Card 5, if materials selected |
 | Employment | The person | Remote-capable = false | Card 5, if work selected |
-| Joint venture | Both parties, permanently | Remote-capable = false | Not asked in this build — see §3.1 |
+| Joint venture | Both parties, permanently | Remote-capable = false | Card 5, if partner selected |
 
 Relocation willingness is a plain yes or no, never a declared radius. Someone might accept
 Lahore to Islamabad but not Lahore to Karachi, and that depends on the pay, the city, and
