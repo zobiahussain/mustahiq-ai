@@ -109,63 +109,91 @@ clearest example — does not lead to a business, so it produces no listing.
 
 The person opens the app, already known to it (`GET /me/context` returns their name,
 district, cluster, trade category and stated purpose from the loan record — never asked
-again). A conversational assistant asks what they do, one open prompt plus a handful of
-quick-select chips for what they're looking for (inputs / workers / a partner / work —
-setting the `seeking_*` flags directly). They answer by voice or keyboard, in whatever
-language they speak — this app is built around Urdu, not English, since that's the actual
-language of the person using it. The audio is transcribed, then one structured-extraction
-call turns the transcript into listing fields and reads back what it understood, in their
-own language, for confirmation — every line individually editable before anything saves.
+again). **Voice is out of scope for now** — this is a short card-based form, English and
+Urdu shown side by side, built to need almost nothing typed: mostly taps, two optional
+numbers, and exactly **one** free-text box. This replaces an earlier fully-conversational,
+voice-first design — worth remembering if that direction comes back later, since this
+version deliberately narrows where a model touches the data, for reliability.
 
-There is no form. This is the whole onboarding, and it is the same experience for
-everyone — there is no separate path based on assumptions about literacy or loan size.
+Five cards:
 
-If a required field is still missing after extraction, the assistant asks **one targeted
-follow-up question** (not a repeat of the open prompt) — at most twice before falling back
-to letting them just type the answer directly, so nobody gets stuck in a question loop.
+| Card | Type | Captures |
+|---|---|---|
+| 1. Role | Tap, single-select | `role` |
+| 2. Looking for | Tap, multi-select | `seeking_inputs` / `seeking_workers` / `seeking_partner` / `seeking_work` |
+| 3. What you make or sell | **The one text box**, Urdu or English | Goes to the LLM call below |
+| 4. Confirm | Tap — pre-filled from card 3's LLM output, one tap to override | `is_remote_capable`, `output_is_physical` |
+| 5. Details — shown only if card 2 selected materials, worker, or work (skipped for partner-only) | Two optional numbers + one travel tap | `monthly_capacity`, `price_range`, `will_deliver_outside_area` (materials) or `will_relocate_for_work` (work) |
+
+`is_women_led` is a small toggle, not its own card — folds into card 1 or a final review
+screen, doesn't need the friction of a dedicated step.
+
+There is no separate path based on assumptions about literacy or loan size — everyone gets
+the same five cards.
+
+### 3.1 The one LLM call, and why it's the only one
+
+Every other field on the form is a tap or a number, straight into a column — no model, no
+parsing, nothing to go wrong. The one place a model earns its keep is **card 3**, and its
+job isn't translation — it's *enrichment for matching*. A thin phrase like "سلائی" makes a
+thin embedding. Expanded into "tailoring, stitching shalwar kameez and uniforms, garment
+production," it actually matches a fabric supplier searching in English.
+
+```python
+prompt = f"""
+Trade category: {trade_category}
+They wrote: "{raw_text}"
+
+Return JSON:
+{{
+  "product_or_service_en": "expanded English description for
+     semantic matching — include the craft, typical outputs, and
+     related terms a supplier or employer would search for",
+  "product_or_service_original": "their exact words unchanged",
+  "skills_en": "comma-separated skills in English",
+  "is_remote_capable": bool
+}}
+"""
+```
+
+`is_remote_capable` comes back as a *suggestion*, not a final answer — card 4 shows it
+pre-selected and lets a single tap flip it. This field silently controls whether proximity
+filtering runs at all for the listing, so an unreviewed model guess is a worse trade than
+one extra tap. `output_is_physical` isn't LLM-touched at all (the prompt doesn't cover it)
+— plain tap, defaults to true.
+
+One consequence of skipping card 5 for partner-only listings, worth being explicit about:
+a joint-venture-only listing never gets asked `will_partner_outside_district` in this
+build, so it stays `false` by default. Not a hard blocker — proximity is a weight, not a
+filter (§5) — but it means such a listing quietly ranks lower on distant matches unless
+also marked remote-capable on card 4.
 
 **English internally, their language everywhere they see it.** The platform-wide "English
 only" rule (SRS §7.2) governs the *matching* pipeline, not what a beneficiary is required
-to speak — every free-text field a beneficiary can see or search on is captured in both
-forms: an `_en` version (what gets embedded and matched — one predictable representation,
-regardless of what language came in) and an `_original` version (what they actually said,
-shown back to them and to whoever they match with). Nobody has to read or write English to
-use this app.
+to speak. `product_or_service` and `skills` are each stored as an `_en` version (what gets
+embedded and matched) and an `_original` version (what they actually wrote, shown back to
+them and to whoever they match with). Nobody has to read or write English to use this app.
 
-### 3.1 What a listing captures
+### 3.2 What a listing captures
 
 | Field | Purpose |
 |---|---|
-| Trade category | One of ten reference categories; drives matching. Already known from the loan record — not re-asked |
-| Product or service | `_en` (embedded, matched) + `_original` (shown to people) — see above |
-| Skills | Same `_en`/`_original` split — what this business can do, used for employment matching |
-| Role | supplier, producer, retailer, service, or logistics |
-| Capacity and price range | Context for whether a match is workable; optional, can stay blank |
-| Cluster and district | Proximity signal; cluster is Al-Khidmat's own operating unit |
-| Seeking flags | inputs, workers, a partner, or work — which models this listing joins |
-| Remote-capable | Asked once, up front; see 3.2 — does the *work* need someone present? |
-| Physical output | Asked once, up front; see 3.2 — does a *good* need transporting? |
-| Travel willingness | Asked per model, only where its gate is open; see 3.2 |
-| Women-led | A flag, not a category — it cuts across all ten |
+| Trade category | Already known from the loan record — not asked |
+| Product or service | `_en` (embedded, matched) + `_original` (shown to people) — card 3 |
+| Skills | Same `_en`/`_original` split — from the same LLM call as product/service |
+| Role | supplier, producer, retailer, service, or logistics — card 1 |
+| Capacity and price range | Optional, can stay blank — card 5 |
+| Cluster and district | Proximity signal; already known from the loan record |
+| Seeking flags | inputs, workers, a partner, or work — card 2 |
+| Remote-capable | LLM-suggested, one-tap override — card 4 |
+| Physical output | Plain tap, not LLM-touched — card 4 |
+| Travel willingness | Card 5, only for the seeking flags that need it |
+| Women-led | A flag, not a category — small toggle, not its own card |
 
-### 3.2 Two gates before travel willingness, not one
+### 3.3 Two gates before travel willingness, not one
 
-Before any of the per-model travel questions, the assistant asks two questions that can
-each skip part of them — **remote-capable** and **physical output** are independent,
-because a person's presence and a good's movement don't always travel together:
-
-- **"Can you do this work remotely, or does it need to be in person?"** — gates whether
-  relocating/partnering-outside-district ever gets asked.
-- **"Does this involve a physical product that has to be delivered or picked up?"** —
-  gates whether delivering-outside-area ever gets asked.
-
-Neither is inferred from trade category — a tailor taking custom orders by post is
-remote-capable even though tailoring generally is not, and category alone can't tell the
-two apart. The clearest single-flag example is freelancing/technology: a web developer in
-Lahore and a client in Karachi never meet at all, so relocating doesn't apply, and there's
-no physical output either. But the two can also split: a remote consultant who ships
-physical sample kits is remote-capable *and* has a physical output — the work needs no
-travel, the kits still need delivery. A supplier selling design files needs neither.
+**Remote-capable** and **physical output** are independent, because a person's presence
+and a good's movement don't always travel together:
 
 | | Proximity filter | Distance penalty |
 |---|---|---|
@@ -174,19 +202,17 @@ travel, the kits still need delivery. A supplier selling design files needs neit
 | Physical, willing to travel | None | Applies (see §5, proximity weighting) |
 | Physical, not willing | Own cluster only | n/a |
 
-The per-model travel question only gets asked when its own gate is still open, because a
-different thing moves in each model — and it's a different gate for goods than for people:
+The clearest single-flag example is freelancing/technology: a web developer in Lahore and
+a client in Karachi never meet at all, so relocating doesn't apply, and there's no
+physical output either. But the two can also split: a remote consultant who ships physical
+sample kits is remote-capable *and* has a physical output — the work needs no travel, the
+kits still need delivery. A supplier selling design files needs neither.
 
-| Model | What has to move | Gate | Question asked |
+| Model | What has to move | Gate | Question |
 |---|---|---|---|
-| Supply chain | Goods | Physical output = true | Will you deliver outside your area? |
-| Employment | The person | Remote-capable = false | Would you relocate for work? |
-| Joint venture | Both parties, permanently | Remote-capable = false | Would you partner outside your district? |
-
-There is no transportability lookup table by trade category here either — same reasoning
-as the two gates above: tailoring is local as a service but its finished garments travel
-fine, and grocery splits by product rather than by category, so the person is asked
-directly.
+| Supply chain | Goods | Physical output = true | Card 5, if materials selected |
+| Employment | The person | Remote-capable = false | Card 5, if work selected |
+| Joint venture | Both parties, permanently | Remote-capable = false | Not asked in this build — see §3.1 |
 
 Relocation willingness is a plain yes or no, never a declared radius. Someone might accept
 Lahore to Islamabad but not Lahore to Karachi, and that depends on the pay, the city, and
@@ -222,7 +248,7 @@ Fires whenever a listing is created or edited.
    match needs willingness to relocate. Applied as a filter, so nobody is shown matches
    they have already ruled out. Skipped for a supply-chain match when the listing's
    output isn't physical, and for an employment or joint-venture match when the listing
-   is remote-capable (§3.2) — in each case, nothing to check distance against.
+   is remote-capable (§3.3) — in each case, nothing to check distance against.
 3. **Vector similarity** over the listing text ranks whatever survives the filters.
 4. **Proximity weighting** reorders the result: same cluster × 1.00, adjacent district ×
    0.85, same province × 0.70, elsewhere × 0.50 — except where step 2's gate was open,
