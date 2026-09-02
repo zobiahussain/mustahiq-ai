@@ -1,11 +1,11 @@
 """Pydantic contracts for the deterministic eligibility rule engine."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, StrictInt, StrictStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, StrictInt, StrictStr, computed_field, field_validator, model_validator
 
 
 AllowedRuleField = Literal[
@@ -22,6 +22,8 @@ AllowedRuleField = Literal[
     "has_disability",
     "chronic_illness_flag",
     "prior_assistance_count",
+    "age",
+    "is_orphan",
 ]
 RuleOperator = Literal["<=", ">=", "==", "in"]
 RuleValue = StrictInt | Decimal | StrictStr | StrictBool | list[StrictStr]
@@ -33,8 +35,9 @@ NUMERIC_FIELDS = {
     "dependents",
     "school_age_children",
     "prior_assistance_count",
+    "age",
 }
-BOOLEAN_FIELDS = {"owns_home", "has_disability", "chronic_illness_flag"}
+BOOLEAN_FIELDS = {"owns_home", "has_disability", "chronic_illness_flag", "is_orphan"}
 CATEGORICAL_FIELDS = {
     "marital_status",
     "employment_status",
@@ -107,6 +110,8 @@ class BeneficiaryProfile(BaseModel):
     has_disability: StrictBool | None = None
     chronic_illness_flag: StrictBool | None = None
     prior_assistance_count: StrictInt | None = None
+    date_of_birth: date | None = None
+    is_orphan: StrictBool | None = None
     domain_attributes: dict[str, JsonValue] | None = None
     staff_notes: StrictStr | None = None
     completeness_score: Decimal | None = None
@@ -114,6 +119,18 @@ class BeneficiaryProfile(BaseModel):
     consent_given: StrictBool | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def age(self) -> int | None:
+        """Derived from date_of_birth at evaluation time, so it never goes stale."""
+        if self.date_of_birth is None:
+            return None
+        today = date.today()
+        years = today.year - self.date_of_birth.year
+        if (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day):
+            years -= 1
+        return years
 
 
 class RuleEvaluationResult(BaseModel):
