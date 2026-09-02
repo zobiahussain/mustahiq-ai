@@ -152,8 +152,15 @@ create table programs (
     domain                  text not null,
     description             text,
 
-    -- hard rules the scoring engine checks directly, e.g.
-    -- {"max_income": 30000, "min_dependents": 1, "districts": ["Lahore"]}
+    -- hard rules the scoring engine checks directly. A list of explicit
+    -- rule objects, not a flat dict -- lets one field carry any operator
+    -- rather than baking the operator into the key name. e.g.
+    -- {"hard_rules": [
+    --     {"rule_id": "r1", "field": "monthly_income", "operator": "<=", "value": 30000, "description": "Income cap"},
+    --     {"rule_id": "r2", "field": "dependents", "operator": ">=", "value": 1, "description": "Minimum dependents"},
+    --     {"rule_id": "r3", "field": "district", "operator": "in", "value": ["Lahore"], "description": "Eligible districts"}
+    -- ]}
+    -- Validated against packages/eligibility's ProgramRule model before storage.
     criteria_structured     jsonb default '{}'::jsonb,
     has_document_criteria   boolean default false,
 
