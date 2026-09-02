@@ -112,6 +112,14 @@ create table beneficiary_profiles (
     has_disability          boolean default false,
     chronic_illness_flag    boolean default false,
 
+    -- age & orphan status
+    -- date_of_birth over a raw age column: age is computed at evaluation
+    -- time in packages/eligibility so it never goes stale as time passes.
+    -- is_orphan surfaces Al-Khidmat's Aghosh/orphan-care eligibility,
+    -- which had no representable field before this.
+    date_of_birth         date,
+    is_orphan             boolean default false,
+
     -- assistance history
     prior_assistance_count  int default 0,
 
