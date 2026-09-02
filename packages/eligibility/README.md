@@ -29,3 +29,13 @@ predicted?), so the platform generates its own training data as it's used.
 **Depends on:** `packages/data` (features), `packages/rag` (document-based criteria, on
 demand only — never in the scoring path).
 **Depended on by:** `services/api`, `packages/nlp_assistant` (explanations).
+
+## Implemented first slice
+
+The package now starts with a deterministic hard-rule evaluator. It accepts a partial
+structured beneficiary profile and admin-confirmed program rules, then returns `pass`,
+`fail`, or `incomplete` together with the passed rules, failed rules, and missing profile
+fields. It intentionally has no Supabase, FastAPI, RAG, model, or frontend dependency.
+
+Tests live in `tests/test_hard_rule_evaluator.py` and use the standard-library
+`unittest` runner so the initial contract does not introduce a pytest dependency.
