@@ -73,6 +73,8 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
+from involvement import get_other_involvements
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
@@ -185,6 +187,19 @@ def get_stored_matches(listing_id: str) -> list[dict]:
     results = [dict(zip(columns, row)) for row in cur.fetchall()]
     cur.close()
     conn.close()
+
+    # Marketplace_Spec.md section 9.4 -- "lets someone judge availability
+    # before asking." This is exactly the moment that applies: looking at
+    # a match result IS about to decide whether to reach out. A second
+    # query per row (not folded into the SQL above) -- see
+    # involvement.py's own docstring for why the underlying lookup can't
+    # collapse to a single join (a venture's several owners vs. one
+    # primary_beneficiary_id). Match lists are short (tens of rows, not
+    # thousands), so N+1 here stays debuggable rather than needing a
+    # batched query nobody asked for yet.
+    for r in results:
+        r["other_involvements"] = get_other_involvements(r["other_id"])
+
     return results
 
 

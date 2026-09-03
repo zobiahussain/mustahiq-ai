@@ -42,6 +42,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rag"))
 from embeddings import embed_text  # noqa: E402
 
+from involvement import get_other_involvements
+
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -133,4 +135,12 @@ def search_listings(
     results = [dict(r) for r in cur.fetchall()]
     cur.close()
     conn.close()
+
+    # Same section 9.4 signal as get_stored_matches() (persist.py) --
+    # someone browsing search results is judging candidates exactly the
+    # same way someone reviewing automatic matches is, so this shows up
+    # here too, not only on the matches screen.
+    for r in results:
+        r["other_involvements"] = get_other_involvements(r["id"])
+
     return results
