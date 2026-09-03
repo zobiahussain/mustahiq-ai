@@ -106,6 +106,7 @@ def _search_supply_chain_producers(cur, source: dict, limit: int) -> list[dict]:
         where active = true
           and availability in ('seeking', 'open_to_offers')
           and seeking_inputs = true
+          and open_request_count < max_open_requests
           and id <> %(source_id)s
           and (%(source_output_physical)s = false
                or cluster_id = %(cluster)s
@@ -131,6 +132,7 @@ def _search_employment_workers(cur, source: dict, limit: int) -> list[dict]:
         where active = true
           and seeking_work = true
           and availability = 'seeking'
+          and open_request_count < max_open_requests
           and id <> %(source_id)s
           and (is_remote_capable = true
                or cluster_id = %(cluster)s
@@ -154,6 +156,7 @@ def _search_employment_businesses(cur, source: dict, limit: int) -> list[dict]:
         where active = true
           and seeking_workers = true
           and availability in ('seeking', 'open_to_offers')
+          and open_request_count < max_open_requests
           and id <> %(source_id)s
           and (%(source_remote)s = true
                or cluster_id = %(cluster)s
@@ -179,6 +182,7 @@ def _search_joint_venture(cur, source: dict, limit: int) -> list[dict]:
         where active = true
           and seeking_partner = true
           and availability in ('seeking', 'open_to_offers')
+          and open_request_count < max_open_requests
           and id <> %(source_id)s
           and (is_remote_capable = true
                or cluster_id = %(cluster)s
