@@ -169,6 +169,17 @@ def save_listing(
             "person can create a listing (see al_khidmat_core_schema.sql)"
         )
 
+    # Checked BEFORE inserting the new row, so this genuinely means
+    # "did they have zero listings before this one" -- section 11.1's
+    # business_established graduation event. The first listing someone
+    # ever creates is the one clear, already-existing "a business now
+    # exists" signal -- no new field needed for this one.
+    cur.execute(
+        "select count(*) from store_listings where primary_beneficiary_id = %s",
+        (beneficiary_id,),
+    )
+    is_first_listing = cur.fetchone()[0] == 0
+
     # Embed product_or_service_en alone, UNLESS this is an employment
     # listing (seeking_work) -- then fold skills in too, since that's what
     # an employer's search actually matches against. See
@@ -235,6 +246,13 @@ def save_listing(
         """,
         (listing_id, beneficiary_id),
     )
+
+    if is_first_listing:
+        cur.execute(
+            "insert into graduation_events (beneficiary_id, event_type, listing_id) "
+            "values (%s, 'business_established', %s)",
+            (beneficiary_id, listing_id),
+        )
 
     conn.commit()
     cur.close()
