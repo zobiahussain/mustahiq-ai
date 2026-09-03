@@ -69,6 +69,22 @@ JWT_EXPIRY_DAYS = 30  # session length -- not specified anywhere yet, a
 
 app = FastAPI(title="Mustahiq AI Marketplace API")
 
+# CORS: without this, a browser (not a script like requests/curl) silently
+# BLOCKS every call from the Vite dev server (localhost:5173) to this API
+# (localhost:8000) -- different port counts as a different origin. This
+# only matters for a real browser; it's why the earlier HTTP smoke test
+# (using the `requests` library) worked fine without it. Wide open for
+# local dev; narrow this to the real deployed frontend origin before
+# going anywhere near production.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # dev only -- see comment above
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ---------------------------------------------------------------------------
 # Auth plumbing -- issuing and checking the token. Business logic (the
