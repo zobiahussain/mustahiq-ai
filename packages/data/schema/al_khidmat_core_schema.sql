@@ -106,6 +106,15 @@ create table beneficiary_profiles (
     -- location
     district                text not null,
     city                    text,
+    -- Al-Khidmat's own 53 operational clusters -- a smaller, more
+    -- specific unit than district, and NOT derivable from district name
+    -- (a district can span multiple clusters). Added 4 Sep 2026 --
+    -- previously had no source anywhere, which silently blocked the
+    -- marketplace's proximity weighting. Same shape of gap
+    -- trade_category_id was: a new field staff fill in, here at profile
+    -- creation, since cluster membership is a general fact about the
+    -- person, not something tied to a specific loan.
+    cluster_id              text,
 
     -- education & health
     education_level         text,                 -- none | primary | matric | intermediate | graduate
@@ -135,6 +144,7 @@ create index on beneficiary_profiles (district);
 create index on beneficiary_profiles (cnic);
 create index on beneficiary_profiles (phone);
 create index on beneficiary_profiles (monthly_income);
+create index on beneficiary_profiles (cluster_id);
 
 
 -- ============================================================

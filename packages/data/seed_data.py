@@ -54,17 +54,17 @@ if not DATABASE_URL:
 # ---------------------------------------------------------------------------
 
 BENEFICIARIES = [
-    # (full_name, phone, district)
-    ("Amina Bibi",      "+923001234567", "Lahore"),
-    ("Fahad Hussain",   "+923001234568", "Lahore"),
-    ("Zainab Sheikh",   "+923001234569", "Hyderabad"),
-    ("Bilal Ahmed",     "+923001234570", "Sukkur"),
-    ("Hina Yousaf",     "+923001234571", "Karachi"),
-    ("Usman Tariq",     "+923001234572", "Faisalabad"),
-    ("Sara Iqbal",      "+923001234573", "Multan"),
-    ("Kashif Raza",     "+923001234574", "Lahore"),
-    ("Nadia Parveen",   "+923001234575", "Hyderabad"),
-    ("Rashid Mehmood",  "+923001234576", "Karachi"),
+    # (full_name, phone, district, cluster_id)
+    ("Amina Bibi",      "+923001234567", "Lahore",     "LHR-01"),
+    ("Fahad Hussain",   "+923001234568", "Lahore",     "LHR-01"),
+    ("Zainab Sheikh",   "+923001234569", "Hyderabad",  "HYD-01"),
+    ("Bilal Ahmed",     "+923001234570", "Sukkur",     "SKR-01"),
+    ("Hina Yousaf",     "+923001234571", "Karachi",    "KHI-01"),
+    ("Usman Tariq",     "+923001234572", "Faisalabad", "FSD-01"),
+    ("Sara Iqbal",      "+923001234573", "Multan",     "MUL-01"),
+    ("Kashif Raza",     "+923001234574", "Lahore",     "LHR-01"),
+    ("Nadia Parveen",   "+923001234575", "Hyderabad",  "HYD-01"),
+    ("Rashid Mehmood",  "+923001234576", "Karachi",    "KHI-01"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -151,14 +151,14 @@ def run():
 
     print("seeding beneficiary_profiles...")
     beneficiary_ids = []
-    for name, phone, district in BENEFICIARIES:
+    for name, phone, district, cluster_id in BENEFICIARIES:
         bid = str(uuid.uuid4())
         cur.execute(
             """
-            insert into beneficiary_profiles (id, full_name, phone, district, consent_given)
-            values (%s, %s, %s, %s, true)
+            insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given)
+            values (%s, %s, %s, %s, %s, true)
             """,
-            (bid, name, phone, district),
+            (bid, name, phone, district, cluster_id),
         )
         beneficiary_ids.append(bid)
     print(f"  {len(beneficiary_ids)} beneficiaries inserted.")

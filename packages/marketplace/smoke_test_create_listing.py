@@ -40,7 +40,6 @@ def main():
     print("\nStep 2 -- save (person tapped confirm)...")
     listing_id = save_listing(
         beneficiary_id=fahad_id,
-        cluster_id="LHR-01",
         role="retailer",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],

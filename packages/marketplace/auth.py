@@ -176,16 +176,15 @@ def verify_otp(phone: str, code: str) -> dict:
 
 def get_me_context(beneficiary_id: str) -> dict:
     """
-    GET /me/context, Marketplace_Spec.md section 3: name, district, trade
-    category, and stated purpose -- everything the 5-card form must NEVER
-    ask again because it's already on file. cluster is deliberately absent
-    -- see create_listing.py's file docstring, "A REAL GAP."
+    GET /me/context, Marketplace_Spec.md section 3: name, district,
+    cluster, trade category, and stated purpose -- everything the 5-card
+    form must NEVER ask again because it's already on file.
     """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
 
     cur.execute(
-        "select full_name, district from beneficiary_profiles where id = %s",
+        "select full_name, district, cluster_id from beneficiary_profiles where id = %s",
         (beneficiary_id,),
     )
     row = cur.fetchone()
@@ -193,7 +192,7 @@ def get_me_context(beneficiary_id: str) -> dict:
         cur.close()
         conn.close()
         raise ValueError(f"no beneficiary_profiles row with id={beneficiary_id}")
-    full_name, district = row
+    full_name, district, cluster_id = row
 
     cur.execute(
         """
@@ -215,6 +214,7 @@ def get_me_context(beneficiary_id: str) -> dict:
     return {
         "full_name": full_name,
         "district": district,
+        "cluster_id": cluster_id,
         "trade_category": trade_category,
         "stated_purpose": stated_purpose,
         "can_create_listing": trade_category is not None,

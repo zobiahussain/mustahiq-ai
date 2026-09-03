@@ -23,17 +23,16 @@ WHAT THIS DELIBERATELY DOES NOT DO
 - save_listing() does not run find_matches() automatically. Creating a
   listing and matching it stay two separate, separately-testable steps.
 
-A REAL GAP THIS FILE SURFACES, NOT SOLVES
-----------------------------------------------
-store_listings.cluster_id has no defined source anywhere in the current
-schema. trade_category_id and district both come cleanly from the
-beneficiary's existing records -- but nothing anywhere records which of
-Al-Khidmat's 53 clusters a beneficiary belongs to. Required here as an
-explicit parameter rather than silently guessed, because guessing it
-wrong would silently corrupt every proximity calculation for that
-listing forever. Needs a real answer -- most likely a new field on
-beneficiary_profiles, the same shape of gap trade_category_id was before
-it got added to the loan application.
+CLUSTER_ID -- RESOLVED 4 SEP 2026, WAS A REAL GAP BEFORE THIS
+--------------------------------------------------------------------
+store_listings.cluster_id used to have no defined source anywhere in the
+schema -- an earlier version of this file required it as an explicit
+parameter because of that. Fixed the same way trade_category_id was:
+added beneficiary_profiles.cluster_id (al_khidmat_core_schema.sql),
+staff-filled at profile creation, backfilled on the live database for
+every already-seeded beneficiary. Now auto-derived here, same as
+trade_category_id and district -- nobody calling save_listing() has to
+know or supply it anymore.
 """
 
 import os
@@ -68,12 +67,13 @@ Return JSON:
 def _fetch_beneficiary_context(cur, beneficiary_id: str) -> dict:
     """The 'already known, never asked again' fields -- section 3, GET /me/context."""
     cur.execute(
-        "select district from beneficiary_profiles where id = %s", (beneficiary_id,)
+        "select district, cluster_id from beneficiary_profiles where id = %s",
+        (beneficiary_id,),
     )
     row = cur.fetchone()
     if row is None:
         raise ValueError(f"no beneficiary_profiles row with id={beneficiary_id}")
-    district = row[0]
+    district, cluster_id = row
 
     cur.execute(
         """
@@ -86,7 +86,11 @@ def _fetch_beneficiary_context(cur, beneficiary_id: str) -> dict:
     row = cur.fetchone()
     trade_category_id = row[0] if row else None
 
-    return {"district": district, "trade_category_id": trade_category_id}
+    return {
+        "district": district,
+        "cluster_id": cluster_id,
+        "trade_category_id": trade_category_id,
+    }
 
 
 def enrich_listing_text(beneficiary_id: str, raw_text: str) -> dict:
@@ -126,7 +130,6 @@ def enrich_listing_text(beneficiary_id: str, raw_text: str) -> dict:
 def save_listing(
     *,
     beneficiary_id: str,
-    cluster_id: str,  # see file docstring "A REAL GAP" -- no defined source yet
     role: str,
     product_or_service_en: str,       # from enrich_listing_text(), possibly user-edited
     product_or_service_original: str,  # from enrich_listing_text(), possibly user-edited
@@ -156,6 +159,14 @@ def save_listing(
         raise ValueError(
             f"beneficiary {beneficiary_id} has no qualifying trade category -- "
             "see al_khidmat_marketplace_schema.sql reference query G"
+        )
+    if context["cluster_id"] is None:
+        cur.close()
+        conn.close()
+        raise ValueError(
+            f"beneficiary {beneficiary_id} has no cluster_id on their profile -- "
+            "staff needs to set beneficiary_profiles.cluster_id before this "
+            "person can create a listing (see al_khidmat_core_schema.sql)"
         )
 
     # Embed product_or_service_en alone, UNLESS this is an employment
@@ -209,7 +220,7 @@ def save_listing(
             "monthly_capacity": monthly_capacity,
             "price_range": price_range,
             "district": context["district"],
-            "cluster_id": cluster_id,
+            "cluster_id": context["cluster_id"],
             "embedding": vector,
         },
     )

@@ -144,7 +144,10 @@ class ExtractBody(BaseModel):
 
 
 class SaveListingBody(BaseModel):
-    cluster_id: str  # see create_listing.py "A REAL GAP" -- app must supply this for now
+    # cluster_id deliberately NOT here -- auto-derived from
+    # beneficiary_profiles.cluster_id server-side (create_listing.py),
+    # never trusted from the client, same reasoning as beneficiary_id
+    # itself never coming from the request body.
     role: str
     product_or_service_en: str
     product_or_service_original: str
