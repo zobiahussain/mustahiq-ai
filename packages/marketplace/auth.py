@@ -30,11 +30,29 @@ A real API would turn a successful verify into a signed JWT here. That's
 services/api's job, not this file's -- this returns the beneficiary_id a
 JWT would have carried, so whoever builds that layer has exactly what
 they need to issue one.
+
+SKIP_ELIGIBILITY_CHECK -- A TOGGLEABLE TESTING BYPASS, ADDED 4 SEP 2026
+--------------------------------------------------------------------------
+Typing a real, already-seeded phone number correctly every time you want
+to test the app was slowing testing down. Set SKIP_ELIGIBILITY_CHECK=true
+in .env and ANY phone number logs in -- if it doesn't already match a
+real beneficiary, one is auto-provisioned on the spot (a real
+beneficiary_profiles row + a real disbursed microfinance_loans row with
+a trade category), so every OTHER function downstream (save_listing,
+matching, everything) keeps working completely normally, unmodified --
+this is the ONE place the bypass lives, not scattered special-casing
+through the rest of the codebase.
+
+This prints a loud warning on every use so it can't be silently forgotten,
+and MUST be false (or simply absent from .env) before anything resembling
+a real demo -- with it on, the eligibility gate this whole module is
+built around does not run at all.
 """
 
 import hashlib
 import os
 import secrets
+import uuid
 
 import psycopg2
 from dotenv import load_dotenv
@@ -43,6 +61,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 MAX_OTP_ATTEMPTS = 5
 OTP_LENGTH = 6
+
+SKIP_ELIGIBILITY_CHECK = os.environ.get("SKIP_ELIGIBILITY_CHECK", "false").lower() == "true"
 
 
 def _hash_code(code: str) -> str:
@@ -55,6 +75,35 @@ def _hash_code(code: str) -> str:
 def _send_sms(phone: str, message: str) -> None:
     """STAND-IN -- see file docstring. No real SMS provider chosen yet."""
     print(f"[SMS -- NOT ACTUALLY SENT, no provider wired up] to {phone}: {message}")
+
+
+def _auto_provision_test_beneficiary(cur, phone: str) -> tuple[str, str]:
+    """
+    Only ever called when SKIP_ELIGIBILITY_CHECK is on -- see file
+    docstring. Creates a real, fully-valid beneficiary_profiles row plus
+    a real disbursed microfinance_loans row (Trading businesses, the
+    least assumption-laden of the ten categories) so everything
+    downstream of login just works, unmodified.
+    """
+    beneficiary_id = str(uuid.uuid4())
+    cur.execute(
+        "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) "
+        "values (%s, %s, %s, 'Lahore', 'LHR-01', true)",
+        (beneficiary_id, f"Test User {phone[-4:]}", phone),
+    )
+
+    cur.execute("select id from trade_categories where name = 'Trading businesses'")
+    trade_category_id = cur.fetchone()[0]
+
+    cur.execute(
+        "insert into microfinance_loans "
+        "(loan_reference, beneficiary_id, loan_product, trade_category_id, "
+        " stated_purpose_text, status, amount_disbursed, disbursed_on) "
+        "values (%s, %s, 'Small Business Loan', %s, 'Auto-provisioned for testing', "
+        "        'disbursed', 150000, current_date)",
+        (f"TEST-{beneficiary_id[:8]}", beneficiary_id, trade_category_id),
+    )
+    return beneficiary_id, trade_category_id
 
 
 def request_otp(phone: str) -> dict:
@@ -80,6 +129,15 @@ def request_otp(phone: str) -> dict:
         (phone,),
     )
     row = cur.fetchone()
+
+    if row is None and SKIP_ELIGIBILITY_CHECK:
+        print(
+            f"[SKIP_ELIGIBILITY_CHECK is ON] auto-provisioning a test beneficiary "
+            f"for {phone} -- this MUST be off before anything resembling a real demo."
+        )
+        beneficiary_id, trade_category_id = _auto_provision_test_beneficiary(cur, phone)
+        conn.commit()
+        row = (beneficiary_id, trade_category_id, "disbursed")
 
     if row is None:
         cur.close()
