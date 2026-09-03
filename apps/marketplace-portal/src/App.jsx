@@ -2,9 +2,10 @@ import { useState } from "react";
 import { requestOtp, verifyOtp, getMeContext } from "./api.js";
 import ListingWizard from "./ListingWizard.jsx";
 import MatchResults from "./MatchResults.jsx";
+import Search from "./Search.jsx";
 
 export default function App() {
-  // "phone" | "code" | "dashboard" | "createListing" | "matches"
+  // "phone" | "code" | "dashboard" | "createListing" | "matches" | "search"
   const [step, setStep] = useState("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -61,6 +62,10 @@ export default function App() {
     return <MatchResults token={token} listingId={newListingId} onBack={() => setStep("dashboard")} />;
   }
 
+  if (step === "search") {
+    return <Search token={token} onBack={() => setStep("dashboard")} />;
+  }
+
   if (step === "dashboard" && context) {
     return (
       <div className="page">
@@ -86,6 +91,17 @@ export default function App() {
             <span>{context.stated_purpose}</span>
           </div>
         </div>
+
+        {/* Search is available regardless of can_create_listing --
+            browsing the marketplace was never conditional on having your
+            own listing or being matched to anything. */}
+        <button
+          className="btn btn-secondary btn-block"
+          style={{ marginBottom: 10 }}
+          onClick={() => setStep("search")}
+        >
+          Search the Marketplace <span style={{ fontFamily: "var(--font-ur)", marginLeft: 6 }}>مارکیٹ پلیس تلاش کریں</span>
+        </button>
 
         {context.can_create_listing ? (
           <button className="btn btn-primary btn-block" onClick={() => setStep("createListing")}>

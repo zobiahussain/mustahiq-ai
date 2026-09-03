@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { extractListingText, saveListing } from "./api.js";
+import { useRef, useState } from "react";
+import { extractListingText, saveListing, transcribeAudio } from "./api.js";
 
 // The 5-card flow, exactly as designed in Marketplace_Spec.md section 3.
 // Every English label carries a REAL Urdu translation next to it (not a
@@ -42,8 +42,48 @@ export default function ListingWizard({ token, onDone }) {
   const [willPartnerOutside, setWillPartnerOutside] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [isWomenLed, setIsWomenLed] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   const anySeekingSelected = Object.values(seeking).some(Boolean);
+
+  async function startRecording() {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        // Stop the mic indicator too, not just the recorder -- leaving
+        // the stream open after recording ends is a real, common bug
+        // (the browser keeps showing "microphone in use").
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setTranscribing(true);
+        try {
+          const result = await transcribeAudio(token, blob);
+          setRawText((prev) => (prev ? prev + " " + result.text.trim() : result.text.trim()));
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+    } catch (err) {
+      setError("Couldn't access the microphone: " + err.message);
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  }
 
   async function handleExtract() {
     setError(null);
@@ -150,13 +190,25 @@ export default function ListingWizard({ token, onDone }) {
           <h3 className="card-heading">
             Tell us what you make or sell <span className="ur">اپنے کام کے بارے میں بتائیں</span>
           </h3>
-          <p className="card-subtext">Urdu or English, whatever's easiest.</p>
+          <p className="card-subtext">Urdu or English, typed or spoken -- whatever's easiest.</p>
+
+          <button
+            type="button"
+            className={`btn ${isRecording ? "btn-accent" : "btn-secondary"}`}
+            onClick={isRecording ? stopRecording : startRecording}
+            disabled={transcribing}
+          >
+            {isRecording ? "⏹ Stop recording" : transcribing ? "Transcribing..." : "🎤 Record"}{" "}
+            <span style={{ fontFamily: "var(--font-ur)" }}>{isRecording ? "روکیں" : "ریکارڈ کریں"}</span>
+          </button>
+
           <textarea
             className="textarea ur-input"
             dir="auto"
             value={rawText}
             onChange={(e) => setRawText(e.target.value)}
             placeholder="سلائی، شلوار قمیض، یونیفارم..."
+            style={{ marginTop: 12 }}
           />
           <div>
             <button className="btn btn-secondary" onClick={() => setStep(2)}>

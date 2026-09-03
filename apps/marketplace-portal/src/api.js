@@ -70,3 +70,29 @@ export async function getListingMatches(token, listingId) {
   });
   return asJson(res);
 }
+
+export async function transcribeAudio(token, audioBlob) {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
+  const res = await fetch(`${API_BASE}/listing/transcribe`, {
+    method: "POST",
+    headers: authHeaders(token), // NOT Content-Type -- the browser sets the
+    // correct multipart boundary itself when the body is FormData; setting
+    // it manually here would omit the boundary and break the upload.
+    body: formData,
+  });
+  return asJson(res);
+}
+
+export async function searchListings(token, filters) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, value);
+    }
+  });
+  const res = await fetch(`${API_BASE}/listings/search?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
