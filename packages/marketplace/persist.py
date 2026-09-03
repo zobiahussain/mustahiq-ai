@@ -52,6 +52,20 @@ Postgres's standard idiom for "this row was just INSERTed, not UPDATEd"
 inside a RETURNING clause on an ON CONFLICT statement -- xmax is an
 internal column Postgres uses for its own MVCC bookkeeping; it's 0 on a
 freshly inserted row and non-zero once any update has touched it.
+
+open_request_count IS INCREMENTED HERE, ON EVERY NEW MATCH -- FOUND MISSING 4 SEP 2026
+--------------------------------------------------------------------------------------------
+Marketplace_Spec.md section 8's rate-limit backstop (a listing stops
+surfacing once it has more than 5 open, unanswered requests) was
+implemented as a filter in every matching.py query (`open_request_count
+< max_open_requests`) -- but nothing anywhere ever INCREMENTED that
+counter, so it sat at its schema default (0) forever and the filter was
+a silent no-op. A new match IS an open, unanswered request for both
+sides -- so it increments here, for both listing_a_id and listing_b_id,
+exactly once, only when is_new (never on a re-score of an existing
+match). It's decremented in dismiss_match() and expire_stale_matches()
+(lifecycle.py) -- whichever ends a match's 'active' status frees the slot
+back up.
 """
 
 import os
@@ -117,6 +131,13 @@ def persist_matches(source_id: str, matches: list[dict]) -> list[dict]:
             "is_new": is_new,
         })
 
+        if is_new:
+            cur.execute(
+                "update store_listings set open_request_count = open_request_count + 1 "
+                "where id in (%s, %s)",
+                (listing_a_id, listing_b_id),
+            )
+
     conn.commit()
     cur.close()
     conn.close()
@@ -177,6 +198,10 @@ def dismiss_match(match_id: str, dismissing_listing_id: str) -> None:
     here, not left to whoever calls this, same "never trust the caller"
     reasoning as beneficiary_id coming from a verified token everywhere
     else in this codebase.
+
+    Also decrements open_request_count for both listings -- see
+    persist_matches()'s note on why that counter has to move in both
+    directions, not just up.
     """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
@@ -186,15 +211,23 @@ def dismiss_match(match_id: str, dismissing_listing_id: str) -> None:
         set status = 'dismissed', dismissed_by_listing_id = %(dismissing_listing_id)s
         where id = %(match_id)s
           and (listing_a_id = %(dismissing_listing_id)s or listing_b_id = %(dismissing_listing_id)s)
+        returning listing_a_id, listing_b_id
         """,
         {"match_id": match_id, "dismissing_listing_id": dismissing_listing_id},
     )
-    if cur.rowcount == 0:
+    row = cur.fetchone()
+    if row is None:
         conn.close()
         raise ValueError(
             f"no match {match_id} involving listing {dismissing_listing_id} -- "
             "either it doesn't exist, or this listing isn't one of its two participants"
         )
+    listing_a_id, listing_b_id = row
+    cur.execute(
+        "update store_listings set open_request_count = greatest(open_request_count - 1, 0) "
+        "where id in (%s, %s)",
+        (listing_a_id, listing_b_id),
+    )
     conn.commit()
     cur.close()
     conn.close()
