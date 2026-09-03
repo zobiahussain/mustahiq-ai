@@ -13,6 +13,19 @@ into the actual API contract locked in CLAUDE.md/Marketplace_Spec.md:
                                      necessary addition, flagged as new
                                      rather than silently treated as if it
                                      was always part of the plan.
+    POST /listing/transcribe     -- added 4 Sep 2026: voice input for card
+                                     3, transcribed via Groq's hosted
+                                     Whisper. Returns text only -- the
+                                     result still goes through the SAME
+                                     /listing/extract as typed text, and is
+                                     still editable before anything saves.
+    GET  /listings/search         -- added 4 Sep 2026: browsing/searching
+                                     the marketplace directly, independent
+                                     of being matched. Deliberately calls a
+                                     DIFFERENT function than the matches
+                                     endpoint above -- see search.py's file
+                                     docstring for why reusing find_matches()
+                                     here would be a real bug, not a shortcut.
 
 WHY THIS FILE IS THIN
 --------------------------
@@ -45,18 +58,21 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "marketplace"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "rag"))
 from auth import request_otp, verify_otp, get_me_context  # noqa: E402
 from create_listing import enrich_listing_text, save_listing  # noqa: E402
 from matching import find_matches, _fetch_listing  # noqa: E402
 from reasoning import add_reasons  # noqa: E402
 from persist import persist_matches  # noqa: E402
+from search import search_listings  # noqa: E402
+from groq_client import transcribe_audio  # noqa: E402
 
 import psycopg2
 import psycopg2.extras
@@ -230,3 +246,52 @@ def listing_matches(listing_id: str, beneficiary_id: str = Depends(get_current_b
     matches = add_reasons(source, matches)
     persist_matches(listing_id, matches)  # save so they survive past this request
     return {"matches": matches}
+
+
+@app.post("/listing/transcribe")
+async def listing_transcribe(
+    audio: UploadFile = File(...),
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
+    """
+    Card 3's optional voice input. Returns {"text": "..."} -- the
+    frontend drops this straight into the same editable text box typing
+    would have filled, then continues into POST /listing/extract exactly
+    as before. beneficiary_id isn't used here (transcription doesn't
+    touch anyone's data), but the dependency still runs -- this endpoint
+    stays behind login like every other listing-creation step, not
+    because it needs to know who's calling, but because an unauthenticated
+    free-transcription endpoint would just be a way for anyone to burn
+    through the Groq account's rate limit.
+    """
+    audio_bytes = await audio.read()
+    text = transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+    return {"text": text}
+
+
+@app.get("/listings/search")
+def listings_search(
+    q: str | None = None,
+    trade_category: str | None = None,
+    role: str | None = None,
+    district: str | None = None,
+    is_women_led: bool | None = None,
+    seeking_inputs: bool | None = None,
+    seeking_workers: bool | None = None,
+    seeking_partner: bool | None = None,
+    seeking_work: bool | None = None,
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
+    results = search_listings(
+        q,
+        trade_category=trade_category,
+        role=role,
+        district=district,
+        is_women_led=is_women_led,
+        seeking_inputs=seeking_inputs,
+        seeking_workers=seeking_workers,
+        seeking_partner=seeking_partner,
+        seeking_work=seeking_work,
+        exclude_beneficiary_id=beneficiary_id,  # don't show someone their own listing in their own search
+    )
+    return {"results": results}

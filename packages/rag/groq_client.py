@@ -104,3 +104,38 @@ def chat_json(prompt: str, *, system: str | None = None, model: str = DEFAULT_MO
     """Same as chat(json_mode=True), but parses the JSON for you."""
     raw = chat(prompt, system=system, json_mode=True, model=model)
     return json.loads(raw)
+
+
+def transcribe_audio(audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    """
+    Speech-to-text via Groq's hosted Whisper -- confirmed live on this
+    account (whisper-large-v3), not guessed from docs, same discipline as
+    picking the chat model earlier. Used for card 3's optional voice
+    input: record -> transcribe -> the transcript becomes `raw_text`,
+    still editable by hand before it goes anywhere near the enrichment
+    call. Nothing downstream (enrich_listing_text) changes -- it already
+    only ever wanted plain text.
+
+    Note on usage logging: transcription is billed by SECONDS of audio,
+    not tokens -- a genuinely different unit than every other call
+    through this file, which is why the printed line below looks
+    different from chat()'s.
+    """
+    client = _get_client()
+    response = client.audio.transcriptions.create(
+        file=(filename, audio_bytes),
+        model="whisper-large-v3",
+        response_format="verbose_json",
+    )
+
+    this_file = os.path.abspath(__file__)
+    call_site = "unknown"
+    for frame in inspect.stack()[1:]:
+        if os.path.abspath(frame.filename) != this_file:
+            call_site = f"{os.path.basename(frame.filename)}:{frame.lineno}"
+            break
+
+    duration = getattr(response, "duration", None)
+    print(f"[groq] {call_site}  model=whisper-large-v3  audio_duration={duration}s")
+
+    return response.text
