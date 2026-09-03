@@ -172,3 +172,50 @@ def verify_otp(phone: str, code: str) -> dict:
     conn.close()
 
     return {"verified": True, "beneficiary_id": beneficiary_id}
+
+
+def get_me_context(beneficiary_id: str) -> dict:
+    """
+    GET /me/context, Marketplace_Spec.md section 3: name, district, trade
+    category, and stated purpose -- everything the 5-card form must NEVER
+    ask again because it's already on file. cluster is deliberately absent
+    -- see create_listing.py's file docstring, "A REAL GAP."
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+
+    cur.execute(
+        "select full_name, district from beneficiary_profiles where id = %s",
+        (beneficiary_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        cur.close()
+        conn.close()
+        raise ValueError(f"no beneficiary_profiles row with id={beneficiary_id}")
+    full_name, district = row
+
+    cur.execute(
+        """
+        select tc.name, ml.stated_purpose_text
+        from microfinance_loans ml
+        left join trade_categories tc on tc.id = ml.trade_category_id
+        where ml.beneficiary_id = %s and ml.status in ('approved', 'disbursed')
+        order by ml.created_at desc
+        limit 1
+        """,
+        (beneficiary_id,),
+    )
+    row = cur.fetchone()
+    trade_category, stated_purpose = row if row else (None, None)
+
+    cur.close()
+    conn.close()
+
+    return {
+        "full_name": full_name,
+        "district": district,
+        "trade_category": trade_category,
+        "stated_purpose": stated_purpose,
+        "can_create_listing": trade_category is not None,
+    }

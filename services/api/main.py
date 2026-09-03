@@ -1,0 +1,213 @@
+"""
+The HTTP layer -- turns the tested Python functions in packages/marketplace
+into the actual API contract locked in CLAUDE.md/Marketplace_Spec.md:
+
+    POST /auth/request-otp
+    POST /auth/verify-otp
+    GET  /me/context
+    POST /listing/extract
+    POST /listing
+    GET  /listing/{id}/matches   -- added here, not in the original locked
+                                     contract: nothing shows a beneficiary
+                                     their matches without it, so it's a
+                                     necessary addition, flagged as new
+                                     rather than silently treated as if it
+                                     was always part of the plan.
+
+WHY THIS FILE IS THIN
+--------------------------
+Every endpoint here is a few lines: read the request, call an already-
+tested function from packages/marketplace, return its result. No business
+logic lives here -- it already lives in, and was already proven against
+real data in, matching.py / auth.py / create_listing.py / reasoning.py /
+persist.py. This file's only job is HTTP plumbing: parsing requests,
+checking the login token, shaping responses, right status codes.
+
+THE LOGIN TOKEN (JWT) IS ISSUED AND CHECKED HERE, NOT IN auth.py
+------------------------------------------------------------------------
+auth.py stays framework-agnostic on purpose -- it doesn't know what a JWT
+is, doesn't import a web framework, is just as testable standalone as it
+already was. Issuing and checking tokens is an HTTP-layer concern, so it
+lives here instead.
+
+SECURITY NOTE, MATCHING THE FLOWCHART'S OWN RULE
+------------------------------------------------------
+POST /listing and POST /listing/extract read beneficiary_id from the
+verified token (get_current_beneficiary below), NEVER from the request
+body -- so nobody can create a listing, or read someone else's draft,
+pretending to be a different beneficiary. This was already the rule
+create_listing.py's functions were written to expect; this file is what
+actually enforces it.
+"""
+
+import os
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException
+from pydantic import BaseModel
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "marketplace"))
+from auth import request_otp, verify_otp, get_me_context  # noqa: E402
+from create_listing import enrich_listing_text, save_listing  # noqa: E402
+from matching import find_matches, _fetch_listing  # noqa: E402
+from reasoning import add_reasons  # noqa: E402
+from persist import persist_matches  # noqa: E402
+
+import psycopg2
+import psycopg2.extras
+
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_DAYS = 30  # session length -- not specified anywhere yet, a
+                       # reasonable default for a phone+OTP app people
+                       # don't want to re-login to constantly
+
+app = FastAPI(title="Mustahiq AI Marketplace API")
+
+
+# ---------------------------------------------------------------------------
+# Auth plumbing -- issuing and checking the token. Business logic (the
+# actual eligibility check) already happened inside auth.py; this part
+# only wraps its result in something the app can carry around.
+# ---------------------------------------------------------------------------
+
+def _issue_token(beneficiary_id: str) -> str:
+    payload = {
+        "beneficiary_id": beneficiary_id,
+        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRY_DAYS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def get_current_beneficiary(authorization: str | None = Header(default=None)) -> str:
+    """
+    A FastAPI dependency -- every endpoint that needs to know WHO is
+    calling declares `beneficiary_id: str = Depends(get_current_beneficiary)`
+    and gets it for free, verified, instead of trusting anything the
+    client claims.
+
+    authorization is OPTIONAL here on purpose (default=None), not
+    required -- a required Header() makes FastAPI's own validation reject
+    a missing header with a generic 422 before this function's body ever
+    runs, so "no token" and "bad token" would come back as two different
+    status codes for what a client should see as the same problem. Both
+    now cleanly return 401.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing or malformed Authorization header")
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, "session expired, log in again")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "invalid token")
+    return payload["beneficiary_id"]
+
+
+# ---------------------------------------------------------------------------
+# Request/response shapes
+# ---------------------------------------------------------------------------
+
+class RequestOtpBody(BaseModel):
+    phone: str
+
+
+class VerifyOtpBody(BaseModel):
+    phone: str
+    code: str
+
+
+class ExtractBody(BaseModel):
+    raw_text: str
+
+
+class SaveListingBody(BaseModel):
+    cluster_id: str  # see create_listing.py "A REAL GAP" -- app must supply this for now
+    role: str
+    product_or_service_en: str
+    product_or_service_original: str
+    skills_en: str | None = None
+    seeking_inputs: bool = False
+    seeking_workers: bool = False
+    seeking_partner: bool = False
+    seeking_work: bool = False
+    is_remote_capable: bool = False
+    output_is_physical: bool = True
+    will_deliver_outside_area: bool = False
+    will_relocate_for_work: bool = False
+    will_partner_outside_district: bool = False
+    monthly_capacity: str | None = None
+    price_range: str | None = None
+    business_name: str | None = None
+    is_women_led: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/auth/request-otp")
+def auth_request_otp(body: RequestOtpBody):
+    result = request_otp(body.phone)
+    if not result["eligible"]:
+        # Two distinct rejections, worded differently -- Marketplace_Spec.md
+        # section 2: "not on file" vs "on file but not eligible" are
+        # different situations for the beneficiary, even though this
+        # simplified schema check collapses to one reason code today.
+        raise HTTPException(403, "This number isn't recognised, or isn't yet eligible.")
+    return result
+
+
+@app.post("/auth/verify-otp")
+def auth_verify_otp(body: VerifyOtpBody):
+    result = verify_otp(body.phone, body.code)
+    if not result["verified"]:
+        raise HTTPException(401, result["reason"])
+    token = _issue_token(result["beneficiary_id"])
+    return {"token": token}
+
+
+@app.get("/me/context")
+def me_context(beneficiary_id: str = Depends(get_current_beneficiary)):
+    return get_me_context(beneficiary_id)
+
+
+@app.post("/listing/extract")
+def listing_extract(body: ExtractBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    try:
+        return enrich_listing_text(beneficiary_id, body.raw_text)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.post("/listing")
+def listing_save(body: SaveListingBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    try:
+        listing_id = save_listing(beneficiary_id=beneficiary_id, **body.model_dump())
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"listing_id": listing_id}
+
+
+@app.get("/listing/{listing_id}/matches")
+def listing_matches(listing_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        source = _fetch_listing(cur, listing_id)
+    except ValueError:
+        raise HTTPException(404, "listing not found")
+    finally:
+        cur.close()
+        conn.close()
+
+    matches = find_matches(listing_id)
+    matches = add_reasons(source, matches)
+    persist_matches(listing_id, matches)  # save so they survive past this request
+    return {"matches": matches}
