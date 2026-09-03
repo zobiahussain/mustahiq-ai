@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { getListingMatches } from "./api.js";
 
-const styles = {
-  page: { fontFamily: "system-ui, sans-serif", maxWidth: 480, margin: "40px auto", padding: 20 },
-  match: { border: "1px solid #ddd", borderRadius: 8, padding: 16, marginBottom: 12 },
-  score: { fontSize: 12, color: "#777" },
-  reason: { marginTop: 8, fontStyle: "italic" },
-};
-
 export default function MatchResults({ token, listingId, onBack }) {
   const [matches, setMatches] = useState(null);
   const [error, setError] = useState(null);
@@ -19,22 +12,31 @@ export default function MatchResults({ token, listingId, onBack }) {
   }, [token, listingId]);
 
   return (
-    <div style={styles.page}>
-      <h2>Your Listing's Matches</h2>
-      {error && <div style={{ color: "#b00020" }}>{error}</div>}
-      {matches === null && !error && <p>Finding matches...</p>}
-      {matches && matches.length === 0 && <p>No matches yet -- check back later.</p>}
+    <div className="page">
+      <div className="app-header">
+        <span className="app-title">Your Matches</span>
+        <span className="app-title-ur">آپ کے میچز</span>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+      {matches === null && !error && <p style={{ color: "var(--color-ink-soft)" }}>Finding matches...</p>}
+      {matches && matches.length === 0 && (
+        <p style={{ color: "var(--color-ink-soft)" }}>No matches yet -- check back later.</p>
+      )}
       {matches &&
         matches.map((m) => (
-          <div key={m.id} style={styles.match}>
+          <div key={m.id} className="match-card">
             <strong>{m.business_name || "(unnamed business)"}</strong>
-            <div style={styles.score}>
-              {m.match_model} -- {m.proximity_label} -- score {m.final_score.toFixed(3)}
+            <div className="match-meta">
+              {m.match_model.replace("_", " ")} &middot; {m.proximity_label} &middot; score {m.final_score.toFixed(3)}
             </div>
-            <div style={styles.reason}>{m.reason}</div>
+            <div className="match-reason">{m.reason}</div>
           </div>
         ))}
-      <button onClick={onBack}>Back</button>
+
+      <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={onBack}>
+        Back <span style={{ fontFamily: "var(--font-ur)" }}>پیچھے</span>
+      </button>
     </div>
   );
 }
