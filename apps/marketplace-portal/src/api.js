@@ -71,6 +71,15 @@ export async function getListingMatches(token, listingId) {
   return asJson(res);
 }
 
+export async function dismissMatch(token, matchId, dismissingListingId) {
+  const res = await fetch(`${API_BASE}/matches/${matchId}/dismiss`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ dismissing_listing_id: dismissingListingId }),
+  });
+  return asJson(res);
+}
+
 export async function transcribeAudio(token, audioBlob) {
   const formData = new FormData();
   formData.append("audio", audioBlob, "recording.webm");

@@ -325,6 +325,17 @@ export default function ListingWizard({ token, onDone }) {
             </span>
           </label>
 
+          {/* Marketplace_Spec.md section 10: must be shown at listing
+              creation AND again at introduction (see MatchResults.jsx) --
+              not buried in a policy page. */}
+          <p style={{ fontSize: 12, color: "var(--color-ink-soft)", marginTop: 4, marginBottom: 12 }}>
+            Al-Khidmat introduces businesses to each other -- it does not broker deals. Terms,
+            pricing, delivery and any dispute are entirely between the two of you.
+            <span className="ur" style={{ display: "block", marginTop: 2 }}>
+              الخدمت صرف تعارف کرواتا ہے -- شرائط، قیمت اور معاملات دونوں فریقین کے درمیان ہیں۔
+            </span>
+          </p>
+
           <div style={{ marginTop: 8 }}>
             <button className="btn btn-secondary" onClick={() => setStep(4)}>
               Back <span style={{ fontFamily: "var(--font-ur)" }}>پیچھے</span>
