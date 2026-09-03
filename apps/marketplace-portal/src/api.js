@@ -45,3 +45,28 @@ export async function getMeContext(token) {
   });
   return asJson(res);
 }
+
+export async function extractListingText(token, rawText) {
+  const res = await fetch(`${API_BASE}/listing/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ raw_text: rawText }),
+  });
+  return asJson(res);
+}
+
+export async function saveListing(token, payload) {
+  const res = await fetch(`${API_BASE}/listing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload),
+  });
+  return asJson(res);
+}
+
+export async function getListingMatches(token, listingId) {
+  const res = await fetch(`${API_BASE}/listing/${listingId}/matches`, {
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
