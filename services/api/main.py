@@ -6,13 +6,22 @@ into the actual API contract locked in CLAUDE.md/Marketplace_Spec.md:
     POST /auth/verify-otp
     GET  /me/context
     POST /listing/extract
-    POST /listing
+    POST /listing                -- also runs match_and_notify()
+                                     automatically now (4 Sep 2026) --
+                                     this IS the delayed-match fix
+                                     (Marketplace_Spec.md 5.2): both
+                                     sides of every genuinely new match
+                                     get notified right here, not only
+                                     whoever's frontend happens to ask.
     GET  /listing/{id}/matches   -- added here, not in the original locked
                                      contract: nothing shows a beneficiary
-                                     their matches without it, so it's a
-                                     necessary addition, flagged as new
-                                     rather than silently treated as if it
-                                     was always part of the plan.
+                                     their matches without it. Now a plain
+                                     read (get_stored_matches()) -- no
+                                     recomputation, POST /listing above
+                                     already did that.
+    POST /matches/{id}/dismiss   -- added 4 Sep 2026: section 7, "either
+                                     side may dismiss a match, and that
+                                     pair never resurfaces."
     POST /listing/transcribe     -- added 4 Sep 2026: voice input for card
                                      3, transcribed via Groq's hosted
                                      Whisper. Returns text only -- the
@@ -68,14 +77,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "rag"))
 from auth import request_otp, verify_otp, get_me_context  # noqa: E402
 from create_listing import enrich_listing_text, save_listing  # noqa: E402
-from matching import find_matches, _fetch_listing  # noqa: E402
-from reasoning import add_reasons  # noqa: E402
-from persist import persist_matches  # noqa: E402
+from matching_pipeline import match_and_notify  # noqa: E402
+from persist import get_stored_matches, dismiss_match  # noqa: E402
 from search import search_listings  # noqa: E402
 from groq_client import transcribe_audio  # noqa: E402
-
-import psycopg2
-import psycopg2.extras
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
@@ -223,29 +228,58 @@ def listing_extract(body: ExtractBody, beneficiary_id: str = Depends(get_current
 
 @app.post("/listing")
 def listing_save(body: SaveListingBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Saves the listing, then immediately runs match_and_notify() --
+    Marketplace_Spec.md section 5, matching "fires whenever a listing is
+    created." This is also what actually fixes the delayed-match gap:
+    running it here, automatically, on every creation (not waiting for a
+    separate GET /matches call the frontend might or might not make) is
+    what lets an OLDER listing get notified the moment a NEW one matches
+    it, without anyone needing to ask.
+    """
     try:
         listing_id = save_listing(beneficiary_id=beneficiary_id, **body.model_dump())
     except ValueError as e:
         raise HTTPException(403, str(e))
-    return {"listing_id": listing_id}
+
+    matches = match_and_notify(listing_id)
+    return {"listing_id": listing_id, "matches": matches}
 
 
 @app.get("/listing/{listing_id}/matches")
 def listing_matches(listing_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        source = _fetch_listing(cur, listing_id)
-    except ValueError:
-        raise HTTPException(404, "listing not found")
-    finally:
-        cur.close()
-        conn.close()
+    """
+    A plain read of what POST /listing already computed and persisted --
+    see get_stored_matches()'s own docstring for why this deliberately
+    does NOT recompute (no fresh Groq calls just to look at a screen).
+    """
+    return {"matches": get_stored_matches(listing_id)}
 
-    matches = find_matches(listing_id)
-    matches = add_reasons(source, matches)
-    persist_matches(listing_id, matches)  # save so they survive past this request
-    return {"matches": matches}
+
+class DismissBody(BaseModel):
+    dismissing_listing_id: str  # which of the two participants is dismissing
+
+
+@app.post("/matches/{match_id}/dismiss")
+def matches_dismiss(
+    match_id: str,
+    body: DismissBody,
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
+    """
+    Marketplace_Spec.md section 7: "Either side may dismiss a match, and
+    that pair never resurfaces." dismiss_match() itself already checks
+    that dismissing_listing_id is actually one of the match's two
+    participants -- an extra check here would verify beneficiary_id owns
+    dismissing_listing_id too, but that's not enforceable yet without a
+    listing-ownership lookup this endpoint doesn't have reason to add on
+    its own; flagged rather than silently skipped.
+    """
+    try:
+        dismiss_match(match_id, body.dismissing_listing_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"dismissed": True}
 
 
 @app.post("/listing/transcribe")
