@@ -109,11 +109,14 @@ clearest example — does not lead to a business, so it produces no listing.
 
 The person opens the app, already known to it (`GET /me/context` returns their name,
 district, cluster, trade category and stated purpose from the loan record — never asked
-again). **Voice is out of scope for now** — this is a short card-based form, English and
-Urdu shown side by side, built to need almost nothing typed: mostly taps, two optional
-numbers, and exactly **one** free-text box. This replaces an earlier fully-conversational,
-voice-first design — worth remembering if that direction comes back later, since this
-version deliberately narrows where a model touches the data, for reliability.
+again). This is a short card-based form, English and Urdu shown side by side, built to
+need almost nothing typed: mostly taps, two optional numbers, and exactly **one**
+free-text box — which can be filled by typing *or* by voice (added 4 Sep 2026: a record
+button transcribes via Groq's hosted Whisper, and the transcript lands in the same
+editable box typing would have, still fully editable before it goes anywhere near the
+enrichment call). This replaces an earlier fully-conversational, voice-first design where
+voice drove the *whole* interaction — this version deliberately narrows where a model
+touches the data, for reliability, while still letting voice fill the one text box.
 
 Five cards:
 
