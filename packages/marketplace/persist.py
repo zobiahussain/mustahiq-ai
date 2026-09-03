@@ -121,3 +121,80 @@ def persist_matches(source_id: str, matches: list[dict]) -> list[dict]:
     cur.close()
     conn.close()
     return results
+
+
+def get_stored_matches(listing_id: str) -> list[dict]:
+    """
+    A plain READ of what's already in marketplace_matches for this
+    listing -- no recomputation, no fresh embeddings, no fresh Groq
+    calls. This is what a "my matches" screen should call, NOT
+    match_and_notify() again -- match_and_notify() already ran once, at
+    creation (or whenever this listing was last edited), and persisted
+    everything. Re-running it every time someone just wants to LOOK at
+    their matches would burn Groq calls for nothing new.
+
+    It also naturally shows delayed matches (Marketplace_Spec.md 5.2):
+    if someone else's later listing matched this one, THEIR
+    match_and_notify() call already wrote the row here (canonical
+    ordering means it doesn't matter which side's listing_id this query
+    filters on) -- opening this screen sees it immediately, no need to
+    re-trigger anything from this listing's own side.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute(
+        """
+        select mm.id, mm.match_model, mm.final_score, mm.proximity_label,
+               mm.reason, mm.status,
+               case when mm.listing_a_id = %(listing_id)s then l_b.id else l_a.id end as other_id,
+               case when mm.listing_a_id = %(listing_id)s then l_b.business_name else l_a.business_name end as business_name,
+               case when mm.listing_a_id = %(listing_id)s then l_b.role else l_a.role end as role
+        from marketplace_matches mm
+        join store_listings l_a on l_a.id = mm.listing_a_id
+        join store_listings l_b on l_b.id = mm.listing_b_id
+        where (mm.listing_a_id = %(listing_id)s or mm.listing_b_id = %(listing_id)s)
+          and mm.status = 'active'
+        order by mm.final_score desc
+        """,
+        {"listing_id": listing_id},
+    )
+    columns = [d[0] for d in cur.description]
+    results = [dict(zip(columns, row)) for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return results
+
+
+def dismiss_match(match_id: str, dismissing_listing_id: str) -> None:
+    """
+    Marketplace_Spec.md section 7: "Either side may dismiss a match, and
+    that pair never resurfaces." Setting status='dismissed' is exactly
+    why persist_matches()'s upsert deliberately never touches status --
+    if it did, the next time either listing gets edited, the re-run
+    would silently flip a dismissed match back to active.
+
+    Only lets one of the actual two participants dismiss it -- checked
+    here, not left to whoever calls this, same "never trust the caller"
+    reasoning as beneficiary_id coming from a verified token everywhere
+    else in this codebase.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute(
+        """
+        update marketplace_matches
+        set status = 'dismissed', dismissed_by_listing_id = %(dismissing_listing_id)s
+        where id = %(match_id)s
+          and (listing_a_id = %(dismissing_listing_id)s or listing_b_id = %(dismissing_listing_id)s)
+        """,
+        {"match_id": match_id, "dismissing_listing_id": dismissing_listing_id},
+    )
+    if cur.rowcount == 0:
+        conn.close()
+        raise ValueError(
+            f"no match {match_id} involving listing {dismissing_listing_id} -- "
+            "either it doesn't exist, or this listing isn't one of its two participants"
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
