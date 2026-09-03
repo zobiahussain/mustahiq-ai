@@ -194,6 +194,7 @@ def run():
     for listing in LISTINGS:
         b_idx = listing.pop("beneficiary_index")
         category_id = category_id_by_name[listing.pop("trade_category")]
+        listing_id = str(uuid.uuid4())
 
         vector = embed_text(listing["product_or_service_en"])
         cur.execute(
@@ -208,7 +209,7 @@ def run():
             values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                str(uuid.uuid4()), beneficiary_ids[b_idx], listing.get("business_name"),
+                listing_id, beneficiary_ids[b_idx], listing.get("business_name"),
                 category_id,
                 listing["product_or_service_en"], listing["product_or_service_original"],
                 listing["role"],
@@ -219,6 +220,16 @@ def run():
                 listing.get("will_relocate_for_work", False),
                 listing["district"], listing["cluster_id"], vector,
             ),
+        )
+
+        # Matches what the real save_listing() does for every listing
+        # created through the app -- an owner row in listing_participants.
+        # Missing here originally; ventures.py's ownership check is what
+        # surfaced it (a seeded listing had no recorded owner at all).
+        cur.execute(
+            "insert into listing_participants (listing_id, beneficiary_id, role, status) "
+            "values (%s, %s, 'owner', 'confirmed')",
+            (listing_id, beneficiary_ids[b_idx]),
         )
     print(f"  {len(LISTINGS)} listings inserted.")
 

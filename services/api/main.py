@@ -82,6 +82,8 @@ from persist import get_stored_matches, dismiss_match  # noqa: E402
 from search import search_listings  # noqa: E402
 from groq_client import transcribe_audio  # noqa: E402
 from reporting import get_impact_report  # noqa: E402
+from ventures import form_venture  # noqa: E402
+from logistics import add_logistics_route  # noqa: E402
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
@@ -330,6 +332,42 @@ def listings_search(
         exclude_beneficiary_id=beneficiary_id,  # don't show someone their own listing in their own search
     )
     return {"results": results}
+
+
+class FormVentureBody(BaseModel):
+    venture_listing_id: str
+    parent_listing_ids: list[str]
+
+
+@app.post("/ventures/form")
+def ventures_form(body: FormVentureBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """Marketplace_Spec.md section 9 -- see ventures.py's own docstring for the design call made here."""
+    try:
+        form_venture(beneficiary_id, body.venture_listing_id, body.parent_listing_ids)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"formed": True}
+
+
+class AddLogisticsRouteBody(BaseModel):
+    listing_id: str
+    from_district: str
+    to_district: str
+    vehicle_type: str | None = None
+    capacity_description: str | None = None
+
+
+@app.post("/logistics/routes")
+def logistics_add_route(body: AddLogisticsRouteBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """Marketplace_Spec.md section 6 -- register a corridor for an existing logistics-role listing."""
+    try:
+        route_id = add_logistics_route(
+            body.listing_id, body.from_district, body.to_district,
+            body.vehicle_type, body.capacity_description,
+        )
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"route_id": route_id}
 
 
 @app.get("/reports/impact")
