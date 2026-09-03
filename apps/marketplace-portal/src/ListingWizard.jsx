@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { extractListingText, saveListing, transcribeAudio } from "./api.js";
+import Header from "./Header.jsx";
 
 // The 5-card flow, exactly as designed in Marketplace_Spec.md section 3.
 // Every English label carries a REAL Urdu translation next to it (not a
@@ -132,10 +133,7 @@ export default function ListingWizard({ token, onDone }) {
 
   return (
     <div className="page">
-      <div className="app-header">
-        <span className="app-title">Create a Listing</span>
-        <span className="app-title-ur">نئی فہرست</span>
-      </div>
+      <Header subtitle="Create a Listing" subtitleUr="نئی فہرست" />
 
       <Progress step={step} />
       {error && <div className="error-banner">{error}</div>}

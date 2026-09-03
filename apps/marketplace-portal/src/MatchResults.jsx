@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getListingMatches } from "./api.js";
+import Header from "./Header.jsx";
 
 export default function MatchResults({ token, listingId, onBack }) {
   const [matches, setMatches] = useState(null);
@@ -13,26 +14,37 @@ export default function MatchResults({ token, listingId, onBack }) {
 
   return (
     <div className="page">
-      <div className="app-header">
-        <span className="app-title">Your Matches</span>
-        <span className="app-title-ur">آپ کے میچز</span>
-      </div>
+      <Header subtitle="Your Matches" subtitleUr="آپ کے میچز" />
 
       {error && <div className="error-banner">{error}</div>}
-      {matches === null && !error && <p style={{ color: "var(--color-ink-soft)" }}>Finding matches...</p>}
+
+      {matches === null && !error && (
+        <div className="stagger">
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+      )}
+
       {matches && matches.length === 0 && (
         <p style={{ color: "var(--color-ink-soft)" }}>No matches yet -- check back later.</p>
       )}
-      {matches &&
-        matches.map((m) => (
-          <div key={m.id} className="match-card">
-            <strong>{m.business_name || "(unnamed business)"}</strong>
-            <div className="match-meta">
-              {m.match_model.replace("_", " ")} &middot; {m.proximity_label} &middot; score {m.final_score.toFixed(3)}
+
+      {matches && matches.length > 0 && (
+        <div className="stagger">
+          {matches.map((m) => (
+            <div key={m.id} className="match-card">
+              <div className="match-card-name">{m.business_name || "(unnamed business)"}</div>
+              <div className="match-meta">
+                <span className="tag tag-primary">{m.match_model.replace("_", " ")}</span>
+                <span className="tag tag-accent">{m.proximity_label}</span>
+                score {m.final_score.toFixed(3)}
+              </div>
+              <div className="match-reason">{m.reason}</div>
             </div>
-            <div className="match-reason">{m.reason}</div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
 
       <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={onBack}>
         Back <span style={{ fontFamily: "var(--font-ur)" }}>پیچھے</span>

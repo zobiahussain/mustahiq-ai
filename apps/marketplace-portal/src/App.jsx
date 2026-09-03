@@ -3,6 +3,7 @@ import { requestOtp, verifyOtp, getMeContext } from "./api.js";
 import ListingWizard from "./ListingWizard.jsx";
 import MatchResults from "./MatchResults.jsx";
 import Search from "./Search.jsx";
+import Header from "./Header.jsx";
 
 export default function App() {
   // "phone" | "code" | "dashboard" | "createListing" | "matches" | "search"
@@ -69,11 +70,8 @@ export default function App() {
   if (step === "dashboard" && context) {
     return (
       <div className="page">
-        <Header />
+        <Header subtitle={context.full_name} />
         <div className="card">
-          <h2 className="card-heading" style={{ fontSize: 19 }}>
-            {context.full_name}
-          </h2>
           <div className="dashboard-row">
             <span className="dashboard-label">District</span>
             <span>{context.district}</span>
@@ -159,15 +157,6 @@ export default function App() {
           </button>
         </form>
       )}
-    </div>
-  );
-}
-
-function Header() {
-  return (
-    <div className="app-header">
-      <span className="app-title">Al-Khidmat Marketplace</span>
-      <span className="app-title-ur">مارکیٹ پلیس</span>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { searchListings } from "./api.js";
+import Header from "./Header.jsx";
 
 // Marketplace_Spec.md section 5.3: search is deliberately UNFILTERED by
 // distance or willingness -- someone here already knows what they want.
@@ -27,6 +28,7 @@ export default function Search({ token, onBack }) {
   async function runSearch() {
     setError(null);
     setBusy(true);
+    setResults(null);
     try {
       const res = await searchListings(token, {
         q,
@@ -45,10 +47,7 @@ export default function Search({ token, onBack }) {
 
   return (
     <div className="page">
-      <div className="app-header">
-        <span className="app-title">Search the Marketplace</span>
-        <span className="app-title-ur">تلاش کریں</span>
-      </div>
+      <Header subtitle="Search the Marketplace" subtitleUr="تلاش کریں" />
 
       <div className="card">
         <label className="field-label">
@@ -62,20 +61,36 @@ export default function Search({ token, onBack }) {
         />
 
         <label className="field-label">Trade category</label>
-        <select className="input" value={tradeCategory} onChange={(e) => setTradeCategory(e.target.value)}>
-          <option value="">Any</option>
+        <div className="chip-row">
+          <button className={`chip ${tradeCategory === "" ? "active" : ""}`} onClick={() => setTradeCategory("")}>
+            Any
+          </button>
           {TRADE_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <button
+              key={c}
+              className={`chip ${tradeCategory === c ? "active" : ""}`}
+              onClick={() => setTradeCategory(c === tradeCategory ? "" : c)}
+            >
+              {c}
+            </button>
           ))}
-        </select>
+        </div>
 
         <label className="field-label">Role</label>
-        <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">Any</option>
+        <div className="chip-row">
+          <button className={`chip ${role === "" ? "active" : ""}`} onClick={() => setRole("")}>
+            Any
+          </button>
           {ROLES.map((r) => (
-            <option key={r} value={r}>{r}</option>
+            <button
+              key={r}
+              className={`chip ${role === r ? "active" : ""}`}
+              onClick={() => setRole(r === role ? "" : r)}
+            >
+              {r}
+            </button>
           ))}
-        </select>
+        </div>
 
         <label className="field-label">District</label>
         <input className="input" value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="e.g. Lahore" />
@@ -93,19 +108,31 @@ export default function Search({ token, onBack }) {
         </button>
       </div>
 
-      {results !== null && (
+      {busy && (
+        <div className="stagger">
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+      )}
+
+      {results !== null && !busy && (
         <>
           <p style={{ color: "var(--color-ink-soft)", fontSize: 13 }}>{results.length} result(s)</p>
-          {results.map((r) => (
-            <div key={r.id} className="match-card">
-              <strong>{r.business_name || "(unnamed business)"}</strong>
-              <div className="match-meta">
-                {r.role} &middot; {r.trade_category || "uncategorised"} &middot; {r.district}
-                {r.is_remote_capable ? " · remote-capable" : ""}
+          <div className="stagger">
+            {results.map((r) => (
+              <div key={r.id} className="match-card">
+                <div className="match-card-name">{r.business_name || "(unnamed business)"}</div>
+                <div className="match-meta">
+                  <span className="tag tag-primary">{r.role}</span>
+                  {r.trade_category && <span className="tag tag-accent">{r.trade_category}</span>}
+                  {r.district}
+                  {r.is_remote_capable ? " · remote-capable" : ""}
+                </div>
+                <div className="match-reason">{r.product_or_service_original}</div>
               </div>
-              <div className="match-reason">{r.product_or_service_original}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </>
       )}
 
