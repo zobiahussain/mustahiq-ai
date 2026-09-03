@@ -363,6 +363,15 @@ Eligibility scoring itself makes **zero** Groq calls, by design (see Needs Recon
 and Eligibility_Flow_Explained.md) — this significantly lowers rate-limit risk versus the
 earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 
+**No agent framework anywhere (confirmed 2 Sep 2026).** Every LLM call in this system is
+one prompt in, one structured JSON answer out — the listing-enrichment call, the
+marketplace match-reason call, the staff assistant's answer, the criteria-extraction call.
+None of them decide "what to call next" in a loop, which is the actual problem
+agent frameworks (LangGraph etc.) solve. So: no agent, no LangGraph, no blockchain (no
+multi-party trust problem exists — one trusted operator, one database) — just the plain
+Groq client through the one usage-logging wrapper, called directly wherever a call is
+needed.
+
 ---
 
 ## Resolved (this revision answered several old open questions)
