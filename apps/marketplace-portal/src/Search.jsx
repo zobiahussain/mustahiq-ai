@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { searchListings } from "./api.js";
 import Header from "./Header.jsx";
 
@@ -6,6 +6,15 @@ import Header from "./Header.jsx";
 // distance or willingness -- someone here already knows what they want.
 // No cluster/district restriction happens anywhere in this screen or the
 // query behind it (search.py) -- that's on purpose, not an oversight.
+//
+// THIS SCREEN IS A BROWSE, NOT JUST A SEARCH -- it loads results the
+// moment it opens, with every filter empty, same as walking into any
+// Shopify storefront and seeing products before typing anything.
+// search_listings() already supported this (query_text=None just orders
+// by newest instead of by similarity) -- the gap was purely that the UI
+// required tapping "Search" first before showing anything. Fixed by
+// running the same search on mount, with whatever filters are set at
+// that moment (none, the first time).
 
 const TRADE_CATEGORIES = [
   "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery", "Livestock",
@@ -44,6 +53,12 @@ export default function Search({ token, onBack }) {
       setBusy(false);
     }
   }
+
+  // Browse mode: load once on open, filters empty -- see file comment.
+  useEffect(() => {
+    runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="page">
@@ -118,7 +133,11 @@ export default function Search({ token, onBack }) {
 
       {results !== null && !busy && (
         <>
-          <p style={{ color: "var(--color-ink-soft)", fontSize: 13 }}>{results.length} result(s)</p>
+          <p style={{ color: "var(--color-ink-soft)", fontSize: 13 }}>
+            {q || tradeCategory || role || district || isWomenLed
+              ? `${results.length} result(s)`
+              : `Browsing all listings (${results.length}) -- newest first`}
+          </p>
           <div className="stagger">
             {results.map((r) => (
               <div key={r.id} className="match-card">
