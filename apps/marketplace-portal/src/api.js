@@ -3,7 +3,11 @@
 // lives here, same rule as main.py itself: the logic already lives in,
 // and was already tested in, packages/marketplace.
 
-const API_BASE = "http://127.0.0.1:8000"; // local dev -- see vite.config.js note
+// VITE_API_BASE is set in .env.local for local dev, and as a real
+// environment variable in Vercel's project settings once deployed --
+// pointing at the Render URL. Falls back to localhost so `npm run dev`
+// keeps working with zero setup for anyone who hasn't configured it yet.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
