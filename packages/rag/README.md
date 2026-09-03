@@ -16,15 +16,26 @@ package only ever answers questions and surfaces passages, never decides who qua
 - **Criteria chunking + embedding** — the same document, separately, into
   `program_criteria` for the assistant to retrieve on demand.
 
-**Embedding dimension — unresolved, needs a decision before building.** The real,
-committed schema (`packages/data/schema/al_khidmat_core_schema.sql`,
-`al_khidmat_marketplace_schema.sql`) uses `vector(768)` throughout, on the assumption of
-Groq/`nomic-embed-text` embeddings. That assumption is false — Groq has no embeddings
-endpoint, confirmed directly against their API reference. The already-decided fallback
-(`sentence-transformers`, `BAAI/bge-small-en-v1.5`) is 384-dim, which doesn't match the
-delivered schema. Cleanest fix: switch to a 768-dim local model (e.g.
-`BAAI/bge-base-en-v1.5` or `all-mpnet-base-v2`) so the schema needs no migration — but
-that's a call to confirm, not something silently picked here. See CLAUDE.md.
+**Embedding dimension — resolved 1 Sep 2026: 768, local, CPU.** `sentence-transformers`,
+`BAAI/bge-base-en-v1.5` — matches `vector(768)` in the delivered schema exactly, no
+migration needed. Still no Groq dependency for embeddings (Groq has no embeddings
+endpoint, confirmed directly against their API reference — stays generation-only).
+
+**Layout:**
+```
+packages/rag/
+  requirements.txt
+  embeddings.py       -- embed_text(text) -> list[float], 768-dim, lazy-loaded singleton
+  smoke_test.py       -- proves the embedding round trip works
+  groq_client.py      -- chat() / chat_json(), the ONE place every Groq call goes
+                          through. Model = openai/gpt-oss-120b -- confirmed live
+                          against the account's real /models list, not docs (Llama
+                          is NOT available on this account, despite what Groq's own
+                          docs page said).
+  smoke_test_groq.py  -- proves the real listing-enrichment prompt works
+```
+The pgvector/LlamaIndex retrieval pipeline and the criteria extraction step land here
+next.
 
 **Depends on:** `packages/data` (schema, vector columns).
 **Depended on by:** `packages/eligibility`, `packages/nlp_assistant`, `packages/marketplace`.

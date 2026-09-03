@@ -88,23 +88,14 @@ earlier revision:
 
 ## Needs reconciling — still open
 
-1. **Embeddings dimension conflicts with an already-shared decision.** The delivered SQL
-   schema uses `vector(768)` throughout, on the assumption Groq or `nomic-embed-text`
-   provides embeddings. We already established Groq has no embeddings endpoint (checked
-   directly against their API reference) and had committed to local
-   `sentence-transformers` at 384-dim — now pushed to GitHub before this revision landed.
-   **This is a real conflict, not a stale-text one** — there's a committed schema behind
-   the 768 number now. Cleanest reconciliation: keep local embeddings (still no Groq
-   dependency, still free, still fast), but switch the model to a **768-dim** local one
-   (`BAAI/bge-base-en-v1.5` or `all-mpnet-base-v2` are the standard picks) so the schema
-   needs no migration. Recommending this, not silently doing it — confirm before
-   `packages/rag` gets built against either number.
-2. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
+1. **Table counts disagree across every doc.** Architecture.md's diagram says 13, its §5
    prose says "Nine tables" then lists ~24 once marketplace tables are counted, and the
    actual SQL says 11 (core) + 13 (marketplace, after `beneficiary_app_accounts` /
    `login_otps` / `microfinance_loans` / `marketplace_invitations` were added) = 24. Not
    load-bearing, just sloppy — treat the SQL files as ground truth for anything
    structural.
+
+Embeddings dimension is no longer on this list — resolved, see Resolved below.
 
 ---
 
@@ -264,12 +255,29 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
   of this, `marketplace_invitations` auto-sends an SMS signup code the moment a qualifying
   loan is recorded — solves "nothing tells the person the app exists," but is a
   convenience only, never required to sign up.
-- **API contract, at least for my slice, is now concrete.** Seven endpoints for the
-  marketplace app's login + listing-creation flow (`POST /auth/request-otp`,
-  `POST /auth/verify-otp`, `GET /me/context`, `POST /listing/transcribe`,
-  `POST /listing/extract`, `POST /listing`, plus the internal embed→match→notify step) —
-  designed and confirmed 1 Sep 2026. This is real progress on Open Question 1 below, for
-  my module specifically; the eligibility-side contract is still someone else's to define.
+- **API contract, at least for my slice, is now concrete.** `POST /auth/request-otp`,
+  `POST /auth/verify-otp`, `GET /me/context`, `POST /listing/extract`, `POST /listing`,
+  plus the internal embed→match→notify step, for the marketplace app's login +
+  listing-creation flow — designed 1 Sep 2026, revised 1 Sep 2026 when listing creation
+  moved from a voice-first conversational design to a card-based form (see below); this is
+  real progress on Open Question 1, for my module specifically — the eligibility-side
+  contract is still someone else's to define.
+- **Listing creation: a 5-card form, ONE LLM call, not a full voice conversation.**
+  Simplification confirmed 1 Sep 2026 — voice is out of scope for now. Almost every field
+  is a tap or a number straight into a column; the one LLM call (Groq, JSON-mode) takes
+  free text from the single text-box card and *enriches* it for matching (e.g. "سلائی" →
+  "tailoring, stitching shalwar kameez and uniforms, garment production"), returning both
+  `_en` (embedded) and `_original` (shown to people) — real value, since a thin phrase
+  makes a thin embedding. `is_remote_capable` and `output_is_physical` are BOTH plain,
+  always-asked taps, not LLM-touched at all — an earlier draft had the LLM suggest
+  `is_remote_capable`, reverted, since it silently controls whether an entire
+  distance-filter step runs for the listing (see §5 step 2 — "distance eligibility" is a
+  genuine WHERE-clause filter, not a ranking weight; only step 4, proximity re-weighting,
+  is a weight). That same filter/weight distinction is why `will_partner_outside_district`
+  needed fixing, not just flagging: an earlier card-5 visibility rule skipped it for
+  partner-only listings, which would have silently, permanently excluded them from every
+  cross-cluster joint-venture match. No schema change needed anywhere here — every field
+  already existed. Full design: Marketplace_Spec.md §3.
 - **"English only" (SRS 7.2) is about the matching pipeline, not what a beneficiary has
   to speak.** Marketplace_Spec.md already committed to "voice or text, in whatever
   language they speak" — so every listing field a beneficiary can see gets an `_en`
@@ -306,8 +314,8 @@ RAG service. If it slips, two people stall.
 | Layer | Choice |
 |---|---|
 | Language | Python 3.11+ |
-| LLM inference (generation only) | Groq API (Llama / Qwen open-weight) |
-| Embeddings | `sentence-transformers`, local, CPU — dimension **unresolved**, see Needs Reconciling #1 |
+| LLM inference (generation only) | Groq API — `openai/gpt-oss-120b` (confirmed live 2 Sep 2026; Llama models are NOT available on this account, only Qwen/gpt-oss/compound — checked against the account's actual `/models` list, not docs) |
+| Embeddings | `sentence-transformers`, local, CPU — `BAAI/bge-base-en-v1.5`, 768-dim (matches schema) |
 | DB + vectors | Supabase Postgres + pgvector |
 | RAG | LlamaIndex over pgvector |
 | Triggers | LlamaIndex Workflows (typed, event-driven steps) |
@@ -355,10 +363,23 @@ Eligibility scoring itself makes **zero** Groq calls, by design (see Needs Recon
 and Eligibility_Flow_Explained.md) — this significantly lowers rate-limit risk versus the
 earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
 
+**No agent framework anywhere (confirmed 2 Sep 2026).** Every LLM call in this system is
+one prompt in, one structured JSON answer out — the listing-enrichment call, the
+marketplace match-reason call, the staff assistant's answer, the criteria-extraction call.
+None of them decide "what to call next" in a loop, which is the actual problem
+agent frameworks (LangGraph etc.) solve. So: no agent, no LangGraph, no blockchain (no
+multi-party trust problem exists — one trusted operator, one database) — just the plain
+Groq client through the one usage-logging wrapper, called directly wherever a call is
+needed.
+
 ---
 
 ## Resolved (this revision answered several old open questions)
 
+- **Embeddings dimension: 768, confirmed 1 Sep 2026.** `BAAI/bge-base-en-v1.5`, local,
+  CPU — matches the delivered schema's `vector(768)` exactly, no migration needed. Still
+  no Groq dependency for embeddings (Groq stays generation-only, as already established).
+  `packages/rag`'s embedding wrapper is being built against this now.
 - **Reason text: templated, not LLM-generated.** Confirmed explicitly and repeatedly —
   no LLM in the scoring loop at all. Match reasons are built from the rule/score
   breakdown. This was open question territory before; now it's just how the system
@@ -397,10 +418,10 @@ earlier revision, since bulk re-scan triggers (5, 6) never touch an LLM at all.
    still needs whole-team agreement before `services/api` and `apps/main-portal` can build
    in parallel. **My own marketplace slice is no longer blocked on this** — see Resolved,
    `POST /auth/request-otp`, `POST /auth/verify-otp`, `GET /me/context`,
-   `POST /listing/transcribe`, `POST /listing/extract`, `POST /listing` are locked for the
-   app-side login + listing-creation flow specifically.
-2. **Embeddings dimension.** See Needs Reconciling #1 above — recommending a 768-dim
-   local model to match the delivered schema without a migration, needs confirming.
+   `POST /listing/extract`, `POST /listing` are locked for the app-side login +
+   listing-creation flow specifically.
+2. ~~Embeddings dimension~~ — **resolved**, see Resolved above (768-dim,
+   `BAAI/bge-base-en-v1.5`).
 3. **Trigger execution model — sync or async?** Still unanswered. Registration-time
    discovery scoring plausibly runs inline (it's milliseconds, deterministic). But
    triggers 5/6 re-scan *all* beneficiaries when a program changes — that can't

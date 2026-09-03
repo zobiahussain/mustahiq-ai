@@ -1,0 +1,127 @@
+"""
+match_and_notify() -- the real version of Marketplace_Spec.md section 5
+("fires whenever a listing is created or edited") combined with section
+7 ("matches are sent to every party involved"), and the actual fix for
+section 5.2, "the delayed match."
+
+WHY THIS FIXES THE DELAYED-MATCH GAP
+------------------------------------------
+Before this file existed, matching only ever ran for whichever listing
+the FRONTEND happened to ask about (right after someone created their
+own listing). Monday's cobbler never got told about Friday's supplier,
+because nothing re-checked Monday's older listing when Friday's new one
+appeared -- the matching LOGIC was always symmetric (find_matches() would
+find the right candidates from either side), but nothing AUTOMATICALLY
+ran it from both sides and told both people.
+
+The fix doesn't require re-scanning the whole database on every new
+listing. find_matches(new_listing_id) already finds every EXISTING
+listing that's compatible with the new one -- that set IS, by
+definition, every pair that just became newly matchable. So: run
+matching once, for the listing that was just created/edited, and notify
+BOTH sides of every match that's genuinely NEW (persist_matches()'s
+is_new flag) -- Friday's supplier gets told about Monday's cobbler (a
+match they can already see, since they just created their listing), and
+Monday's cobbler gets told too (a match they had no way to know about
+until right now). Nobody gets re-notified about a match they already
+know about, because is_new is only True the first time a pair is stored.
+"""
+
+import os
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+from matching import find_matches, _fetch_listing
+from reasoning import add_reasons
+from persist import persist_matches
+from notify import notify_match
+from logistics import find_logistics_for_route
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
+
+def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
+    """
+    Call this whenever a listing is created (and, once editing exists,
+    whenever it's edited -- see README note on that gap). Returns the
+    matches with reasons attached, same shape find_matches()+add_reasons()
+    already returned, so callers that just want to DISPLAY matches (the
+    API's GET /listing/{id}/matches) don't need to change.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    source = _fetch_listing(cur, listing_id)
+    cur.close()
+    conn.close()
+
+    matches = find_matches(listing_id, limit)
+    matches = add_reasons(source, matches)
+    persisted = persist_matches(listing_id, matches)
+
+    for match, saved in zip(matches, persisted):
+        if not saved["is_new"]:
+            continue  # already notified both sides when this pair first matched
+
+        # Section 6.1's automatic half: a NEW cross-cluster match gets an
+        # operator suggested right here, the same moment it's created.
+        #
+        # Widened 4 Sep 2026 -- an earlier version only checked
+        # match_model == "supply_chain", reasoning "employment and
+        # joint_venture don't move goods." True for GOODS, but misses two
+        # real cases: an employment match where the person isn't
+        # remote-capable (they're relocating -- a person needing
+        # transport help is exactly what logistics is for too), and a
+        # joint venture where neither side is remote-capable (the
+        # partners need to physically meet to combine businesses). Also
+        # covers the subtler case Marketplace_Spec.md 3.3 already
+        # names: a listing can be remote-capable (the WORK needs no
+        # travel) but still have a physical output (SAMPLE KITS still
+        # need shipping) -- so goods-movement is checked independently
+        # of person-movement on both sides, not assumed to move together.
+        goods_moving = (
+            match["match_model"] == "supply_chain"
+            and (source.get("output_is_physical") or match.get("output_is_physical"))
+        )
+        person_traveling = (
+            match["match_model"] in ("employment", "joint_venture")
+            and not source.get("is_remote_capable")
+            and not match.get("is_remote_capable")
+        )
+        if match["proximity_label"] != "same cluster" and (goods_moving or person_traveling):
+            logistics_id = find_logistics_for_route(source["district"], match["district"])
+            if logistics_id:
+                conn = psycopg2.connect(os.environ["DATABASE_URL"])
+                cur = conn.cursor()
+                cur.execute(
+                    "update marketplace_matches set suggested_logistics_id = %s where id = %s",
+                    (logistics_id, saved["id"]),
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+
+        source_beneficiary_id = source["primary_beneficiary_id"]
+        candidate_beneficiary_id = match.get("primary_beneficiary_id")
+
+        # Venture listings have no single owner (primary_beneficiary_id
+        # is null -- ownership lives in listing_participants instead, per
+        # the schema). Skipping notification for that side rather than
+        # crashing -- a real limitation, not a bug: venture participant
+        # notification would need listing_participants fan-out, not built
+        # here.
+        if source_beneficiary_id:
+            notify_match(
+                source_beneficiary_id,
+                saved["id"],
+                f"New match: {match.get('business_name') or 'a business'} -- {match['reason']}",
+            )
+        if candidate_beneficiary_id:
+            notify_match(
+                candidate_beneficiary_id,
+                saved["id"],
+                f"New match: {source.get('business_name') or 'a business'} -- {match['reason']}",
+            )
+
+    return matches
