@@ -15,7 +15,7 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-from create_listing import create_listing
+from create_listing import enrich_listing_text, save_listing
 from matching import find_matches
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
@@ -33,12 +33,18 @@ def get_fahad_id():
 def main():
     fahad_id = get_fahad_id()
 
-    print("Creating a listing for Fahad Hussain (loan status = approved, not disbursed)...")
-    listing_id = create_listing(
+    print("Step 1 -- enrich (draft, nothing saved yet)...")
+    draft = enrich_listing_text(fahad_id, "چاہیے کیشیئر، اسٹور مینیجر")  # "need a cashier, store manager"
+    print(f"  draft: {draft}")
+
+    print("\nStep 2 -- save (person tapped confirm)...")
+    listing_id = save_listing(
         beneficiary_id=fahad_id,
         cluster_id="LHR-01",
         role="retailer",
-        raw_text="چاہیے کیشیئر، اسٹور مینیجر",  # "need a cashier, store manager"
+        product_or_service_en=draft["product_or_service_en"],
+        product_or_service_original=draft["product_or_service_original"],
+        skills_en=draft.get("skills_en"),
         seeking_workers=True,
         is_remote_capable=False,
         output_is_physical=True,

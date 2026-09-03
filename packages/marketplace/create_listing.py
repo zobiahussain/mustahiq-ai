@@ -1,33 +1,39 @@
 """
-create_listing() -- the real version of what seed_data.py fakes: takes
-the 5-card form's answers (Marketplace_Spec.md section 3), runs the ONE
-enrichment call, computes the embedding, and saves an actual
-store_listings row plus the owner's listing_participants row.
+enrich_listing_text() + save_listing() -- the real version of what
+seed_data.py fakes, split into the TWO separate steps the actual design
+needs (Marketplace_Spec.md section 3: "draft in THEIR language... nothing
+persisted until they confirm"):
+
+  1. enrich_listing_text() -- card 3's free text goes in, the ONE LLM call
+     runs, a DRAFT comes back. Nothing touches the database yet.
+  2. save_listing() -- the (possibly user-edited) draft, plus every other
+     card's answers, actually gets written to store_listings.
+
+An earlier version of this file did both in one function. Split apart now
+because the API layer needs them as two separate endpoints anyway
+(POST /listing/extract, then POST /listing) -- the person has to be able
+to see and edit the draft before anything saves, which a single
+do-everything function can't support.
 
 WHAT THIS DELIBERATELY DOES NOT DO
 --------------------------------------
 - Does not trust a caller-supplied listing owner. beneficiary_id here
   stands in for "whatever the real API extracts from a verified login
-  token" -- Marketplace_Spec.md's own flow diagram is explicit that
-  listing ownership comes from the JWT, never from the request body, so
-  nobody can create a listing pretending to be someone else.
-- Does not run find_matches() automatically. Creating a listing and
-  matching it stay two separate, separately-testable steps -- chain them
-  yourself (see smoke_test_create_listing.py for exactly what that looks
-  like end to end).
+  token" -- ownership comes from the JWT, never the request body.
+- save_listing() does not run find_matches() automatically. Creating a
+  listing and matching it stay two separate, separately-testable steps.
 
 A REAL GAP THIS FILE SURFACES, NOT SOLVES
 ----------------------------------------------
 store_listings.cluster_id has no defined source anywhere in the current
 schema. trade_category_id and district both come cleanly from the
-beneficiary's existing records (their most recent qualifying loan, and
-their profile) -- but nothing anywhere records which of Al-Khidmat's 53
-clusters a beneficiary belongs to. Required here as an explicit
-parameter rather than silently guessed or defaulted, because guessing it
+beneficiary's existing records -- but nothing anywhere records which of
+Al-Khidmat's 53 clusters a beneficiary belongs to. Required here as an
+explicit parameter rather than silently guessed, because guessing it
 wrong would silently corrupt every proximity calculation for that
 listing forever. Needs a real answer -- most likely a new field on
-beneficiary_profiles, populated by staff, the same shape of gap
-trade_category_id was before it got added to the loan application.
+beneficiary_profiles, the same shape of gap trade_category_id was before
+it got added to the loan application.
 """
 
 import os
@@ -83,12 +89,48 @@ def _fetch_beneficiary_context(cur, beneficiary_id: str) -> dict:
     return {"district": district, "trade_category_id": trade_category_id}
 
 
-def create_listing(
+def enrich_listing_text(beneficiary_id: str, raw_text: str) -> dict:
+    """
+    STEP 1 -- card 3. Runs the one LLM call, returns a draft. Writes
+    nothing to the database. Raises ValueError if this beneficiary was
+    never offered listing creation in the first place (see save_listing()
+    for the same guard, repeated there since these are two independent
+    calls and each must be safe to call on its own).
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+
+    context = _fetch_beneficiary_context(cur, beneficiary_id)
+    if context["trade_category_id"] is None:
+        cur.close()
+        conn.close()
+        raise ValueError(
+            f"beneficiary {beneficiary_id} has no qualifying trade category -- "
+            "see al_khidmat_marketplace_schema.sql reference query G"
+        )
+
+    cur.execute(
+        "select name from trade_categories where id = %s",
+        (context["trade_category_id"],),
+    )
+    trade_category_name = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+
+    enrichment = chat_json(
+        ENRICHMENT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
+    )
+    return enrichment
+
+
+def save_listing(
     *,
     beneficiary_id: str,
     cluster_id: str,  # see file docstring "A REAL GAP" -- no defined source yet
     role: str,
-    raw_text: str,  # card 3's free text, Urdu or English
+    product_or_service_en: str,       # from enrich_listing_text(), possibly user-edited
+    product_or_service_original: str,  # from enrich_listing_text(), possibly user-edited
+    skills_en: str | None = None,      # from enrich_listing_text(), possibly user-edited
     seeking_inputs: bool = False,
     seeking_workers: bool = False,
     seeking_partner: bool = False,
@@ -103,39 +145,27 @@ def create_listing(
     business_name: str | None = None,
     is_women_led: bool = False,
 ) -> str:
-    """Returns the new listing's id."""
+    """STEP 2 -- fires when the person taps confirm. Returns the new listing's id."""
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
 
     context = _fetch_beneficiary_context(cur, beneficiary_id)
     if context["trade_category_id"] is None:
-        # Should never actually reach here -- the app itself must not offer
-        # listing creation to a beneficiary the eligibility gate already
-        # excluded. This check exists so a bug elsewhere fails loudly here
-        # instead of silently writing a listing nobody should have gotten to.
+        cur.close()
+        conn.close()
         raise ValueError(
             f"beneficiary {beneficiary_id} has no qualifying trade category -- "
             "see al_khidmat_marketplace_schema.sql reference query G"
         )
-
-    cur.execute(
-        "select name from trade_categories where id = %s",
-        (context["trade_category_id"],),
-    )
-    trade_category_name = cur.fetchone()[0]
-
-    enrichment = chat_json(
-        ENRICHMENT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
-    )
 
     # Embed product_or_service_en alone, UNLESS this is an employment
     # listing (seeking_work) -- then fold skills in too, since that's what
     # an employer's search actually matches against. See
     # store_listings.embedding's column comment in the schema for this
     # same rule stated there.
-    text_to_embed = enrichment["product_or_service_en"]
-    if seeking_work and enrichment.get("skills_en"):
-        text_to_embed += ". Skills: " + enrichment["skills_en"]
+    text_to_embed = product_or_service_en
+    if seeking_work and skills_en:
+        text_to_embed += ". Skills: " + skills_en
     vector = embed_text(text_to_embed)
 
     cur.execute(
@@ -162,9 +192,9 @@ def create_listing(
             "beneficiary_id": beneficiary_id,
             "business_name": business_name,
             "trade_category_id": context["trade_category_id"],
-            "product_or_service_en": enrichment["product_or_service_en"],
-            "product_or_service_original": enrichment["product_or_service_original"],
-            "skills_en": enrichment.get("skills_en"),
+            "product_or_service_en": product_or_service_en,
+            "product_or_service_original": product_or_service_original,
+            "skills_en": skills_en,
             "role": role,
             "seeking_inputs": seeking_inputs,
             "seeking_workers": seeking_workers,
