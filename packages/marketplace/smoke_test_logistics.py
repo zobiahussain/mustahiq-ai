@@ -50,17 +50,19 @@ def main():
     print("PASS -- found via direct search")
 
     print("\n--- automatic attachment to a real cross-cluster supply_chain match ---")
-    # Amina (Lahore, seeking_inputs) x Zainab (Hyderabad, supplier) is
-    # already a real cross-cluster match from earlier testing. Re-run
-    # matching for Amina to exercise the attach path (it runs on every
-    # NEW match; force a clean slate for this one pair so it's new again).
+    # Using Bilal (Sukkur, supplier), not Zainab -- Zainab is now
+    # legitimately 'committed' from the ventures test earlier in this
+    # session (correct behavior, see the ventures smoke test), so she no
+    # longer surfaces as a candidate. Add the matching corridor for Kashif.
+    add_logistics_route(kashif_logistics_id, "Lahore", "Sukkur", "rickshaw", "up to 200kg")
+
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
-    cur.execute("select id from store_listings where business_name = 'Zainab Leather Supplies'")
-    zainab_id = cur.fetchone()[0]
+    cur.execute("select id from store_listings where business_name = 'Bilal Leather Trading'")
+    bilal_id = cur.fetchone()[0]
     cur.execute(
         "delete from marketplace_matches where (listing_a_id in (%s,%s) and listing_b_id in (%s,%s))",
-        (amina_id, zainab_id, amina_id, zainab_id),
+        (amina_id, bilal_id, amina_id, bilal_id),
     )
     conn.commit()
     conn.close()
@@ -68,9 +70,9 @@ def main():
     match_and_notify(amina_id)
 
     matches = get_stored_matches(amina_id)
-    zainab_match = [m for m in matches if m["business_name"] == "Zainab Leather Supplies"][0]
-    print("suggested_logistics_business_name:", zainab_match["suggested_logistics_business_name"])
-    assert zainab_match["suggested_logistics_business_name"] == "Kashif Rickshaw Transport"
+    bilal_match = [m for m in matches if m["business_name"] == "Bilal Leather Trading"][0]
+    print("suggested_logistics_business_name:", bilal_match["suggested_logistics_business_name"])
+    assert bilal_match["suggested_logistics_business_name"] == "Kashif Rickshaw Transport"
     print("PASS -- cross-cluster supply_chain match automatically got a logistics suggestion.")
 
 

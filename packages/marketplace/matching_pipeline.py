@@ -64,14 +64,32 @@ def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
         if not saved["is_new"]:
             continue  # already notified both sides when this pair first matched
 
-        # Section 6.1's automatic half: a NEW cross-cluster supply_chain
-        # match (goods physically moving) gets an operator suggested,
-        # right here, same moment the match itself gets created -- not a
-        # separate step someone has to remember to run. Same-cluster
-        # matches don't need this (nothing to transport between
-        # districts), and it's specific to supply_chain -- employment and
-        # joint_venture matches don't move goods.
-        if match["match_model"] == "supply_chain" and match["proximity_label"] != "same cluster":
+        # Section 6.1's automatic half: a NEW cross-cluster match gets an
+        # operator suggested right here, the same moment it's created.
+        #
+        # Widened 4 Sep 2026 -- an earlier version only checked
+        # match_model == "supply_chain", reasoning "employment and
+        # joint_venture don't move goods." True for GOODS, but misses two
+        # real cases: an employment match where the person isn't
+        # remote-capable (they're relocating -- a person needing
+        # transport help is exactly what logistics is for too), and a
+        # joint venture where neither side is remote-capable (the
+        # partners need to physically meet to combine businesses). Also
+        # covers the subtler case Marketplace_Spec.md 3.3 already
+        # names: a listing can be remote-capable (the WORK needs no
+        # travel) but still have a physical output (SAMPLE KITS still
+        # need shipping) -- so goods-movement is checked independently
+        # of person-movement on both sides, not assumed to move together.
+        goods_moving = (
+            match["match_model"] == "supply_chain"
+            and (source.get("output_is_physical") or match.get("output_is_physical"))
+        )
+        person_traveling = (
+            match["match_model"] in ("employment", "joint_venture")
+            and not source.get("is_remote_capable")
+            and not match.get("is_remote_capable")
+        )
+        if match["proximity_label"] != "same cluster" and (goods_moving or person_traveling):
             logistics_id = find_logistics_for_route(source["district"], match["district"])
             if logistics_id:
                 conn = psycopg2.connect(os.environ["DATABASE_URL"])

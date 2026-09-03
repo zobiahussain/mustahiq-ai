@@ -78,7 +78,8 @@ def _search_supply_chain_suppliers(cur, source: dict, limit: int) -> list[dict]:
     """Source seeks_inputs=true -> find role='supplier' candidates."""
     cur.execute(
         """
-        select id, primary_beneficiary_id, business_name, product_or_service_en, role, district, cluster_id,
+        select id, primary_beneficiary_id, business_name, product_or_service_en, role,
+               is_remote_capable, output_is_physical, district, cluster_id,
                1 - (embedding <=> %(vec)s) as similarity
         from store_listings
         where active = true
@@ -102,7 +103,8 @@ def _search_supply_chain_producers(cur, source: dict, limit: int) -> list[dict]:
     """Source role='supplier' -> find seeking_inputs=true candidates."""
     cur.execute(
         """
-        select id, primary_beneficiary_id, business_name, product_or_service_en, role, district, cluster_id,
+        select id, primary_beneficiary_id, business_name, product_or_service_en, role,
+               is_remote_capable, output_is_physical, district, cluster_id,
                1 - (embedding <=> %(vec)s) as similarity
         from store_listings
         where active = true
@@ -128,7 +130,8 @@ def _search_employment_workers(cur, source: dict, limit: int) -> list[dict]:
     """Source seeking_workers=true -> find seeking_work=true candidates."""
     cur.execute(
         """
-        select id, primary_beneficiary_id, business_name, product_or_service_en, role, district, cluster_id,
+        select id, primary_beneficiary_id, business_name, product_or_service_en, role,
+               is_remote_capable, output_is_physical, district, cluster_id,
                1 - (embedding <=> %(vec)s) as similarity
         from store_listings
         where active = true
@@ -152,7 +155,8 @@ def _search_employment_businesses(cur, source: dict, limit: int) -> list[dict]:
     """Source seeking_work=true -> find seeking_workers=true candidates."""
     cur.execute(
         """
-        select id, primary_beneficiary_id, business_name, product_or_service_en, role, district, cluster_id,
+        select id, primary_beneficiary_id, business_name, product_or_service_en, role,
+               is_remote_capable, output_is_physical, district, cluster_id,
                1 - (embedding <=> %(vec)s) as similarity
         from store_listings
         where active = true
@@ -178,7 +182,8 @@ def _search_joint_venture(cur, source: dict, limit: int) -> list[dict]:
     """Source seeking_partner=true -> find other seeking_partner=true candidates."""
     cur.execute(
         """
-        select id, primary_beneficiary_id, business_name, product_or_service_en, role, district, cluster_id,
+        select id, primary_beneficiary_id, business_name, product_or_service_en, role,
+               is_remote_capable, output_is_physical, district, cluster_id,
                1 - (embedding <=> %(vec)s) as similarity
         from store_listings
         where active = true
