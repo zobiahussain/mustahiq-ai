@@ -314,7 +314,7 @@ RAG service. If it slips, two people stall.
 | Layer | Choice |
 |---|---|
 | Language | Python 3.11+ |
-| LLM inference (generation only) | Groq API (Llama / Qwen open-weight) |
+| LLM inference (generation only) | Groq API — `openai/gpt-oss-120b` (confirmed live 2 Sep 2026; Llama models are NOT available on this account, only Qwen/gpt-oss/compound — checked against the account's actual `/models` list, not docs) |
 | Embeddings | `sentence-transformers`, local, CPU — `BAAI/bge-base-en-v1.5`, 768-dim (matches schema) |
 | DB + vectors | Supabase Postgres + pgvector |
 | RAG | LlamaIndex over pgvector |
