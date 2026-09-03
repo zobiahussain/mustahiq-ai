@@ -37,6 +37,7 @@ from matching import find_matches, _fetch_listing
 from reasoning import add_reasons
 from persist import persist_matches
 from notify import notify_match
+from logistics import find_logistics_for_route
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
@@ -62,6 +63,26 @@ def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
     for match, saved in zip(matches, persisted):
         if not saved["is_new"]:
             continue  # already notified both sides when this pair first matched
+
+        # Section 6.1's automatic half: a NEW cross-cluster supply_chain
+        # match (goods physically moving) gets an operator suggested,
+        # right here, same moment the match itself gets created -- not a
+        # separate step someone has to remember to run. Same-cluster
+        # matches don't need this (nothing to transport between
+        # districts), and it's specific to supply_chain -- employment and
+        # joint_venture matches don't move goods.
+        if match["match_model"] == "supply_chain" and match["proximity_label"] != "same cluster":
+            logistics_id = find_logistics_for_route(source["district"], match["district"])
+            if logistics_id:
+                conn = psycopg2.connect(os.environ["DATABASE_URL"])
+                cur = conn.cursor()
+                cur.execute(
+                    "update marketplace_matches set suggested_logistics_id = %s where id = %s",
+                    (logistics_id, saved["id"]),
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
 
         source_beneficiary_id = source["primary_beneficiary_id"]
         candidate_beneficiary_id = match.get("primary_beneficiary_id")

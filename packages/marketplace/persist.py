@@ -169,10 +169,12 @@ def get_stored_matches(listing_id: str) -> list[dict]:
                mm.reason, mm.status,
                case when mm.listing_a_id = %(listing_id)s then l_b.id else l_a.id end as other_id,
                case when mm.listing_a_id = %(listing_id)s then l_b.business_name else l_a.business_name end as business_name,
-               case when mm.listing_a_id = %(listing_id)s then l_b.role else l_a.role end as role
+               case when mm.listing_a_id = %(listing_id)s then l_b.role else l_a.role end as role,
+               logi.business_name as suggested_logistics_business_name
         from marketplace_matches mm
         join store_listings l_a on l_a.id = mm.listing_a_id
         join store_listings l_b on l_b.id = mm.listing_b_id
+        left join store_listings logi on logi.id = mm.suggested_logistics_id
         where (mm.listing_a_id = %(listing_id)s or mm.listing_b_id = %(listing_id)s)
           and mm.status = 'active'
         order by mm.final_score desc
