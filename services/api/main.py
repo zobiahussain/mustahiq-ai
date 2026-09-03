@@ -81,6 +81,7 @@ from matching_pipeline import match_and_notify  # noqa: E402
 from persist import get_stored_matches, dismiss_match  # noqa: E402
 from search import search_listings  # noqa: E402
 from groq_client import transcribe_audio  # noqa: E402
+from reporting import get_impact_report  # noqa: E402
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
@@ -329,3 +330,17 @@ def listings_search(
         exclude_beneficiary_id=beneficiary_id,  # don't show someone their own listing in their own search
     )
     return {"results": results}
+
+
+@app.get("/reports/impact")
+def reports_impact():
+    """
+    Marketplace_Spec.md section 11 -- staff/donor-facing, not a
+    beneficiary endpoint (the only one in this file that isn't).
+    DELIBERATELY UNAUTHENTICATED for now -- real staff auth (Supabase
+    Auth, email+password, role-gated) belongs to the eligibility side's
+    services/api build, not this module. Flagged rather than silently
+    left open forever: this needs a real auth check before this ever
+    goes anywhere near production.
+    """
+    return get_impact_report()
