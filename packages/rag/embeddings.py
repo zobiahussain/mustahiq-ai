@@ -36,7 +36,29 @@ for the Render free-tier memory watch item flagged in CLAUDE.md: the model
 only ever occupies memory once it's actually used, not at process startup.
 """
 
-from sentence_transformers import SentenceTransformer
+import os
+
+# WHY THIS HAS TO BE SET BEFORE THE sentence_transformers IMPORT
+# --------------------------------------------------------------------
+# "Vector search felt slow" turned out to mostly be this, not the actual
+# search: every time a fresh process calls SentenceTransformer(MODEL_NAME)
+# for the first time, huggingface_hub -- underneath sentence-transformers
+# -- makes a real network call (a HEAD request) to check whether a newer
+# version of the model exists on the Hub, EVEN THOUGH the model is
+# already fully downloaded and cached locally (confirmed: it's sitting in
+# ~/.cache/huggingface/hub). That network round-trip is what was slow,
+# and on one flaky connection it's also what produced the WinError 10054
+# we hit earlier tonight. HF_HUB_OFFLINE=1 tells huggingface_hub to never
+# touch the network at all -- use the local cache or fail loudly, no
+# freshness check. Safe here because the model IS cached; if it weren't,
+# this would need to come off for one run to actually download it. It has
+# to be set as an environment variable BEFORE `from sentence_transformers
+# import SentenceTransformer` runs, because huggingface_hub reads it once
+# at import time, not per-call -- setting it later (e.g. inside
+# _get_model()) would be too late.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+from sentence_transformers import SentenceTransformer  # noqa: E402
 
 MODEL_NAME = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768

@@ -88,6 +88,7 @@ actually enforces it.
 """
 
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -117,6 +118,7 @@ from graduation import (  # noqa: E402
     record_loan_repaid,
 )
 from lifecycle import send_invitation_if_eligible  # noqa: E402
+from embeddings import embed_text  # noqa: E402
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
@@ -124,7 +126,38 @@ JWT_EXPIRY_DAYS = 30  # session length -- not specified anywhere yet, a
                        # reasonable default for a phone+OTP app people
                        # don't want to re-login to constantly
 
-app = FastAPI(title="Mustahiq AI Marketplace API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    A LIFESPAN CONTEXT MANAGER -- FastAPI's mechanism for "run this once
+    when the server starts, run that once when it stops." Code before
+    `yield` runs at startup; code after `yield` would run at shutdown (we
+    have none needed here). This replaces the older `@app.on_event
+    ("startup")` decorator style, which FastAPI has deprecated in favor
+    of this.
+
+    WHY WARM THE EMBEDDING MODEL HERE INSTEAD OF LEAVING IT LAZY
+    --------------------------------------------------------------------
+    embeddings.py's lazy-singleton pattern (load once, on first use) is
+    still the right call for memory (CLAUDE.md's Render free-tier RAM
+    watch item) -- nothing here changes that. What was actually making
+    search/listing-creation FEEL slow was WHICH request paid that
+    one-time cost: without this, it was whichever real user happened to
+    be first to search or create a listing after a server restart. Now
+    it's paid once, right here, before the server even starts accepting
+    requests -- every real request after that hits an already-loaded
+    model. combined with the HF_HUB_OFFLINE fix in embeddings.py (which
+    removes a slow, occasionally-flaky network call that used to run
+    even on a cached model), first-use latency for search/listing
+    creation drops from several seconds to whatever a single cached-model
+    encode() call costs, at any point in the server's life.
+    """
+    embed_text("startup warmup")
+    yield
+
+
+app = FastAPI(title="Mustahiq AI Marketplace API", lifespan=lifespan)
 
 # CORS: without this, a browser (not a script like requests/curl) silently
 # BLOCKS every call from the Vite dev server (localhost:5173) to this API
@@ -219,6 +252,13 @@ def require_internal_key(x_internal_key: str | None = Header(default=None)) -> N
 
 class RequestOtpBody(BaseModel):
     phone: str
+    # Only meaningful when SKIP_ELIGIBILITY_CHECK is on server-side AND
+    # phone doesn't already match a real beneficiary -- see
+    # auth.py's request_otp()/_auto_provision_test_beneficiary()
+    # docstrings. Harmless to send otherwise; silently ignored.
+    full_name: str | None = None
+    district: str | None = None
+    trade_category: str | None = None
 
 
 class VerifyOtpBody(BaseModel):
@@ -260,7 +300,13 @@ class SaveListingBody(BaseModel):
 
 @app.post("/auth/request-otp")
 def auth_request_otp(body: RequestOtpBody):
-    result = request_otp(body.phone)
+    try:
+        result = request_otp(body.phone, body.full_name, body.district, body.trade_category)
+    except ValueError as e:
+        # Only reachable via the full_name/district/trade_category
+        # testing path -- see RequestOtpBody's comment. A typo'd district
+        # or category name here, not an eligibility rejection.
+        raise HTTPException(400, str(e))
     if not result["eligible"]:
         # Two distinct rejections, worded differently -- Marketplace_Spec.md
         # section 2: "not on file" vs "on file but not eligible" are
