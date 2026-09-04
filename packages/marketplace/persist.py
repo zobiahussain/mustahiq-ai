@@ -73,6 +73,8 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
+from involvement import get_other_involvements_batch
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
@@ -183,6 +185,19 @@ def get_stored_matches(listing_id: str) -> list[dict]:
     )
     columns = [d[0] for d in cur.description]
     results = [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    # Marketplace_Spec.md section 9.4 -- "lets someone judge availability
+    # before asking." This is exactly the moment that applies: looking at
+    # a match result IS about to decide whether to reach out. A second
+    # ONE batched lookup for every row's counterpart, not one per row --
+    # see involvement.py's get_other_involvements_batch() docstring for
+    # why this collapsed from up to 2*N queries (each of which was
+    # ALSO its own ~9.6s-to-establish connection, before an earlier fix
+    # in this same file) down to exactly 2, total, for the whole page.
+    involvements = get_other_involvements_batch([r["other_id"] for r in results], conn=conn)
+    for r in results:
+        r["other_involvements"] = involvements.get(r["other_id"], [])
+
     cur.close()
     conn.close()
     return results

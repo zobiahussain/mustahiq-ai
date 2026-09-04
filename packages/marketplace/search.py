@@ -42,6 +42,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rag"))
 from embeddings import embed_text  # noqa: E402
 
+from involvement import get_other_involvements_batch
+
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -132,5 +134,14 @@ def search_listings(
     cur.execute(sql, params)
     results = [dict(r) for r in cur.fetchall()]
     cur.close()
+
+    # Same section 9.4 signal as get_stored_matches() (persist.py), and
+    # the same batched fix -- 2 queries total for the whole results
+    # page, not 2 per row. See involvement.py's
+    # get_other_involvements_batch() docstring.
+    involvements = get_other_involvements_batch([r["id"] for r in results], conn=conn)
+    for r in results:
+        r["other_involvements"] = involvements.get(r["id"], [])
+
     conn.close()
     return results

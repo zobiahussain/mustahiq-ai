@@ -35,6 +35,31 @@ into the actual API contract locked in CLAUDE.md/Marketplace_Spec.md:
                                      endpoint above -- see search.py's file
                                      docstring for why reusing find_matches()
                                      here would be a real bug, not a shortcut.
+    POST /listing/{id}/availability -- added 5 Sep 2026: Marketplace_Spec.md
+                                     section 8, "a listing carries an
+                                     availability status the person
+                                     controls" -- the write path that was
+                                     missing (see listings.py).
+    POST /donations               -- added 5 Sep 2026: graduation.py's
+                                     record_donation(), section 11.1.
+    POST /matches/{id}/connect    -- added 5 Sep 2026: graduation.py's
+                                     confirm_match_connection().
+    POST /me/no-longer-seeking    -- added 5 Sep 2026: graduation.py's
+                                     record_no_longer_seeking_assistance().
+    POST /webhooks/loan-approved  -- added 5 Sep 2026: the real target for
+                                     Al-Khidmat's loan system to call the
+                                     moment a loan is written with a trade
+                                     category (section 2, "the invitation
+                                     problem") -- fires
+                                     send_invitation_if_eligible().
+    POST /webhooks/loan-repaid    -- added 5 Sep 2026: the real target for
+                                     "as soon as it's repaid they'll send
+                                     us through API" -- fires
+                                     graduation.py's record_loan_repaid().
+                                     Gated by require_internal_key(), see
+                                     below -- neither webhook is a
+                                     beneficiary action, so the JWT scheme
+                                     doesn't apply to them.
 
 WHY THIS FILE IS THIN
 --------------------------
@@ -63,6 +88,7 @@ actually enforces it.
 """
 
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -84,6 +110,15 @@ from groq_client import transcribe_audio  # noqa: E402
 from reporting import get_impact_report  # noqa: E402
 from ventures import form_venture  # noqa: E402
 from logistics import add_logistics_route  # noqa: E402
+from listings import set_availability  # noqa: E402
+from graduation import (  # noqa: E402
+    record_donation,
+    confirm_match_connection,
+    record_no_longer_seeking_assistance,
+    record_loan_repaid,
+)
+from lifecycle import send_invitation_if_eligible  # noqa: E402
+from embeddings import embed_text  # noqa: E402
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
@@ -91,7 +126,38 @@ JWT_EXPIRY_DAYS = 30  # session length -- not specified anywhere yet, a
                        # reasonable default for a phone+OTP app people
                        # don't want to re-login to constantly
 
-app = FastAPI(title="Mustahiq AI Marketplace API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    A LIFESPAN CONTEXT MANAGER -- FastAPI's mechanism for "run this once
+    when the server starts, run that once when it stops." Code before
+    `yield` runs at startup; code after `yield` would run at shutdown (we
+    have none needed here). This replaces the older `@app.on_event
+    ("startup")` decorator style, which FastAPI has deprecated in favor
+    of this.
+
+    WHY WARM THE EMBEDDING MODEL HERE INSTEAD OF LEAVING IT LAZY
+    --------------------------------------------------------------------
+    embeddings.py's lazy-singleton pattern (load once, on first use) is
+    still the right call for memory (CLAUDE.md's Render free-tier RAM
+    watch item) -- nothing here changes that. What was actually making
+    search/listing-creation FEEL slow was WHICH request paid that
+    one-time cost: without this, it was whichever real user happened to
+    be first to search or create a listing after a server restart. Now
+    it's paid once, right here, before the server even starts accepting
+    requests -- every real request after that hits an already-loaded
+    model. combined with the HF_HUB_OFFLINE fix in embeddings.py (which
+    removes a slow, occasionally-flaky network call that used to run
+    even on a cached model), first-use latency for search/listing
+    creation drops from several seconds to whatever a single cached-model
+    encode() call costs, at any point in the server's life.
+    """
+    embed_text("startup warmup")
+    yield
+
+
+app = FastAPI(title="Mustahiq AI Marketplace API", lifespan=lifespan)
 
 # CORS: without this, a browser (not a script like requests/curl) silently
 # BLOCKS every call from the Vite dev server (localhost:5173) to this API
@@ -150,12 +216,49 @@ def get_current_beneficiary(authorization: str | None = Header(default=None)) ->
     return payload["beneficiary_id"]
 
 
+def require_internal_key(x_internal_key: str | None = Header(default=None)) -> None:
+    """
+    A SHARED-SECRET GATE, NOT REAL AUTH -- flagged deliberately, same
+    spirit as GET /reports/impact's existing "unauthenticated for now"
+    note. This guards two kinds of caller that JWT auth doesn't fit at
+    all:
+
+      1. Webhooks (POST /webhooks/loan-approved, /loan-repaid) -- these
+         are meant to be called by AL-KHIDMAT'S OWN LOAN SYSTEM, not a
+         logged-in beneficiary. There's no beneficiary token to check
+         because there's no beneficiary in the request at all.
+      2. GET /reports/impact -- staff/donor-facing. Real staff auth is
+         Supabase Auth, email+password, role-gated -- that belongs to the
+         eligibility side's services/api build (CLAUDE.md's stack table),
+         not this module, and doesn't exist in this codebase yet.
+
+    A single shared secret (INTERNAL_API_KEY in .env) sent as the
+    X-Internal-Key header is the smallest thing that's still an actual
+    check rather than nothing -- FastAPI's Header() auto-converts the
+    parameter name (x_internal_key) to the header name (X-Internal-Key).
+    This is explicitly a placeholder: when either a real loan-system
+    integration or real staff auth exists, swap this dependency out for
+    that, everywhere it's used below -- nothing else about these routes
+    needs to change.
+    """
+    expected = os.environ.get("INTERNAL_API_KEY")
+    if not expected or x_internal_key != expected:
+        raise HTTPException(401, "missing or invalid internal key")
+
+
 # ---------------------------------------------------------------------------
 # Request/response shapes
 # ---------------------------------------------------------------------------
 
 class RequestOtpBody(BaseModel):
     phone: str
+    # Only meaningful when SKIP_ELIGIBILITY_CHECK is on server-side AND
+    # phone doesn't already match a real beneficiary -- see
+    # auth.py's request_otp()/_auto_provision_test_beneficiary()
+    # docstrings. Harmless to send otherwise; silently ignored.
+    full_name: str | None = None
+    district: str | None = None
+    trade_category: str | None = None
 
 
 class VerifyOtpBody(BaseModel):
@@ -197,7 +300,13 @@ class SaveListingBody(BaseModel):
 
 @app.post("/auth/request-otp")
 def auth_request_otp(body: RequestOtpBody):
-    result = request_otp(body.phone)
+    try:
+        result = request_otp(body.phone, body.full_name, body.district, body.trade_category)
+    except ValueError as e:
+        # Only reachable via the full_name/district/trade_category
+        # testing path -- see RequestOtpBody's comment. A typo'd district
+        # or category name here, not an eligibility rejection.
+        raise HTTPException(400, str(e))
     if not result["eligible"]:
         # Two distinct rejections, worded differently -- Marketplace_Spec.md
         # section 2: "not on file" vs "on file but not eligible" are
@@ -334,6 +443,92 @@ def listings_search(
     return {"results": results}
 
 
+class SetAvailabilityBody(BaseModel):
+    availability: str  # 'seeking' / 'open_to_offers' / 'committed' -- see listings.py
+
+
+class DonationBody(BaseModel):
+    amount: float
+    listing_id: str | None = None
+    note: str | None = None
+
+
+class NoLongerSeekingBody(BaseModel):
+    notes: str | None = None
+
+
+class LoanWebhookBody(BaseModel):
+    loan_id: str
+
+
+@app.post("/listing/{listing_id}/availability")
+def listing_set_availability(
+    listing_id: str,
+    body: SetAvailabilityBody,
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
+    """Marketplace_Spec.md section 8 -- "a listing carries an availability status the person controls." """
+    try:
+        set_availability(beneficiary_id, listing_id, body.availability)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"availability": body.availability}
+
+
+@app.post("/donations")
+def donations_create(body: DonationBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """Marketplace_Spec.md section 10/11.1 -- the voluntary donation, and the became_donor graduation trigger it may fire."""
+    return record_donation(beneficiary_id, body.amount, body.listing_id, body.note)
+
+
+@app.post("/matches/{match_id}/connect")
+def matches_connect(match_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Marketplace_Spec.md section 7 -- marks a match 'connected' (the two
+    parties actually reached each other), distinct from
+    POST /matches/{id}/dismiss. For an employment match, this is also the
+    real hired_employee graduation moment -- see graduation.py.
+    """
+    try:
+        return confirm_match_connection(match_id, beneficiary_id)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.post("/me/no-longer-seeking")
+def me_no_longer_seeking(body: NoLongerSeekingBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """Marketplace_Spec.md section 11.1 -- self-reported, deliberately: nobody but the person can assert this."""
+    event_id = record_no_longer_seeking_assistance(beneficiary_id, body.notes)
+    return {"graduation_event_id": event_id}
+
+
+@app.post("/webhooks/loan-approved", dependencies=[Depends(require_internal_key)])
+def webhook_loan_approved(body: LoanWebhookBody):
+    """
+    Marketplace_Spec.md section 2, "the invitation problem" -- call this
+    the moment Al-Khidmat's loan system writes a microfinance_loans row
+    (insert OR update) with a trade_category_id set. Safe to call on
+    every loan write unconditionally -- send_invitation_if_eligible() is
+    a no-op (returns False) if there's no qualifying trade category yet.
+    """
+    sent = send_invitation_if_eligible(body.loan_id)
+    return {"invitation_sent": sent}
+
+
+@app.post("/webhooks/loan-repaid", dependencies=[Depends(require_internal_key)])
+def webhook_loan_repaid(body: LoanWebhookBody):
+    """
+    Marketplace_Spec.md section 11.1 -- "loan repaid field can come from
+    microfinance db. As soon as it's repaid they'll send us through API."
+    This IS that endpoint.
+    """
+    try:
+        event_id = record_loan_repaid(body.loan_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"graduation_event_id": event_id}
+
+
 class FormVentureBody(BaseModel):
     venture_listing_id: str
     parent_listing_ids: list[str]
@@ -370,15 +565,16 @@ def logistics_add_route(body: AddLogisticsRouteBody, beneficiary_id: str = Depen
     return {"route_id": route_id}
 
 
-@app.get("/reports/impact")
+@app.get("/reports/impact", dependencies=[Depends(require_internal_key)])
 def reports_impact():
     """
     Marketplace_Spec.md section 11 -- staff/donor-facing, not a
     beneficiary endpoint (the only one in this file that isn't).
-    DELIBERATELY UNAUTHENTICATED for now -- real staff auth (Supabase
-    Auth, email+password, role-gated) belongs to the eligibility side's
-    services/api build, not this module. Flagged rather than silently
-    left open forever: this needs a real auth check before this ever
-    goes anywhere near production.
+    UPDATED 5 Sep 2026: was fully unauthenticated; now gated by the same
+    require_internal_key() shared secret as the loan webhooks below. This
+    is still a placeholder, not real staff auth -- see
+    require_internal_key()'s own docstring for what "real" looks like and
+    why it isn't built yet. An improvement over wide open, not a finished
+    answer.
     """
     return get_impact_report()

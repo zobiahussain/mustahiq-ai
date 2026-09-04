@@ -21,11 +21,17 @@ async function asJson(response) {
   return body;
 }
 
-export async function requestOtp(phone) {
+// testProfile is OPTIONAL -- {full_name, district, trade_category}, only
+// meaningful when the BACKEND's SKIP_ELIGIBILITY_CHECK is on and phone
+// doesn't already match a real beneficiary (see auth.py's docstring).
+// Harmless to send otherwise; the backend just ignores it. Real
+// self-registration doesn't exist in this product -- this is a testing
+// convenience standing in for what a loan officer would have entered.
+export async function requestOtp(phone, testProfile = {}) {
   const res = await fetch(`${API_BASE}/auth/request-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ phone, ...testProfile }),
   });
   return asJson(res);
 }
