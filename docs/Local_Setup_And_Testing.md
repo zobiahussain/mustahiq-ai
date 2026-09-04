@@ -20,14 +20,19 @@ Everything you need lives inside this one repo — there's no second download.
 
 ---
 
-## 2. Bring `.env` over yourself — it's not in GitHub, on purpose
+## 2. Two files to bring over yourself — everything else is on GitHub
 
-Open `.gitignore` and you'll see `.env` is excluded. A database password and API keys
-should never sit in git history, even a private repo — that's the whole reason it's
-excluded, not an oversight. Copy your existing `.env` file from this machine (USB, a
-private note to yourself, whatever channel you're comfortable with — never paste it into
-a GitHub issue, Slack, or anywhere public) and drop it at the **repo root** on the new
-machine, next to `CLAUDE.md`. It currently holds:
+Confirmed directly (`git status --ignored`), not assumed: only two files in this repo
+need manual copying. Everything else either pushes with the repo or regenerates itself in
+section 3/4 below (`node_modules/`, `packages/rag/.venv/`, `__pycache__/`, and
+`packages/data/exports/` are all gitignored but don't need copying — they're rebuilt by
+`npm install`/`pip install`, or by rerunning a script).
+
+**`.env`** — gitignored on purpose. A database password and API keys should never sit in
+git history, even a private repo. Copy it (USB, a private note to yourself, whatever
+channel you're comfortable with — never paste it into a GitHub issue, Slack, or anywhere
+public) and drop it at the **repo root** on the new machine, next to `CLAUDE.md`. It
+currently holds:
 
 ```
 SUPABASE_PROJECT_URL=...
@@ -42,6 +47,13 @@ INTERNAL_API_KEY=...             # gates the webhook endpoints, see section 6
 
 Every Python file that needs the database or Groq loads this same file — nothing needs a
 second copy anywhere else in the repo.
+
+**`marketplace_listing_build_flowchart.png`** (repo root, ~955 KB) — the only OTHER file
+that needs manual copying. Not gitignored, just genuinely never committed (sitting there
+since 1 Sep 2026) — a real gap, confirmed by checking `git status` directly rather than
+assuming everything at the repo root is tracked. Left untracked deliberately (not pushed)
+— copy it the same way as `.env` if you want it on the new machine, or skip it if you
+don't need it there.
 
 ---
 
