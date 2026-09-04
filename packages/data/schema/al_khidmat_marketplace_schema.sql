@@ -167,6 +167,12 @@ create table microfinance_loans (
 
     amount_disbursed      numeric,
     disbursed_on          date,
+    -- Added 4 Sep 2026, alongside the loan_repaid graduation trigger: the
+    -- loan term's expected end date, set at disbursement. NOT the same
+    -- thing as the actual repaid-on date -- that arrives later via a
+    -- real signal from Al-Khidmat's loan system (graduation.py's
+    -- record_loan_repaid()), not computed or guessed here.
+    expected_repayment_date date,
     created_at            timestamptz default now()
 );
 

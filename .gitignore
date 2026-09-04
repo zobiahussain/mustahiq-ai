@@ -19,6 +19,9 @@ dist/
 .env.*
 !.env.example
 
+# Data exports -- point-in-time snapshots for review, not source
+packages/data/exports/
+
 # Editor / OS
 .vscode/
 .idea/

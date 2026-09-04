@@ -1,0 +1,80 @@
+"""
+Proves logistics both ways: direct search, and automatic attachment to
+a real cross-cluster supply_chain match.
+
+Run: python smoke_test_logistics.py
+"""
+
+import os
+
+import psycopg2
+from dotenv import load_dotenv
+
+from logistics import add_logistics_route, search_transport
+from matching_pipeline import match_and_notify
+from persist import get_stored_matches
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
+
+def main():
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute("select id from store_listings where business_name = 'Kashif Rickshaw Transport'")
+    kashif_logistics_id = cur.fetchone()[0]
+    conn.close()
+
+    print("--- add_logistics_route() ---")
+    route_id = add_logistics_route(
+        kashif_logistics_id, "Lahore", "Hyderabad", "rickshaw", "up to 200kg"
+    )
+    print(f"route added: {route_id}")
+
+    print("\n--- add_logistics_route() rejects a non-logistics listing ---")
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute("select id from store_listings where business_name = %s", ("Amina's Tailoring",))
+    amina_id = cur.fetchone()[0]
+    conn.close()
+    try:
+        add_logistics_route(amina_id, "Lahore", "Hyderabad")
+        print("BUG: should have raised")
+    except ValueError as e:
+        print("correctly rejected:", e)
+
+    print("\n--- search_transport() direct search ---")
+    results = search_transport("Lahore", "Hyderabad")
+    for r in results:
+        print(" ", r)
+    assert any(r["business_name"] == "Kashif Rickshaw Transport" for r in results)
+    print("PASS -- found via direct search")
+
+    print("\n--- automatic attachment to a real cross-cluster supply_chain match ---")
+    # Using Bilal (Sukkur, supplier), not Zainab -- Zainab is now
+    # legitimately 'committed' from the ventures test earlier in this
+    # session (correct behavior, see the ventures smoke test), so she no
+    # longer surfaces as a candidate. Add the matching corridor for Kashif.
+    add_logistics_route(kashif_logistics_id, "Lahore", "Sukkur", "rickshaw", "up to 200kg")
+
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute("select id from store_listings where business_name = 'Bilal Leather Trading'")
+    bilal_id = cur.fetchone()[0]
+    cur.execute(
+        "delete from marketplace_matches where (listing_a_id in (%s,%s) and listing_b_id in (%s,%s))",
+        (amina_id, bilal_id, amina_id, bilal_id),
+    )
+    conn.commit()
+    conn.close()
+
+    match_and_notify(amina_id)
+
+    matches = get_stored_matches(amina_id)
+    bilal_match = [m for m in matches if m["business_name"] == "Bilal Leather Trading"][0]
+    print("suggested_logistics_business_name:", bilal_match["suggested_logistics_business_name"])
+    assert bilal_match["suggested_logistics_business_name"] == "Kashif Rickshaw Transport"
+    print("PASS -- cross-cluster supply_chain match automatically got a logistics suggestion.")
+
+
+if __name__ == "__main__":
+    main()
