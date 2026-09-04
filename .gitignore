@@ -21,6 +21,7 @@ dist/
 
 # Data exports -- point-in-time snapshots for review, not source
 packages/data/exports/
+artifacts/
 
 # Editor / OS
 .vscode/
