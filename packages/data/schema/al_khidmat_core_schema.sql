@@ -118,7 +118,10 @@ create table beneficiary_profiles (
     -- is_orphan surfaces Al-Khidmat's Aghosh/orphan-care eligibility,
     -- which had no representable field before this.
     date_of_birth         date,
-    is_orphan             boolean default false,
+    -- Nullable: unknown must remain distinct from false so the eligibility
+    -- feature builder can preserve missingness rather than treating it as a
+    -- confirmed non-orphan status.
+    is_orphan             boolean,
 
     -- assistance history
     prior_assistance_count  int default 0,
