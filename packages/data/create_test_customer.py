@@ -1,11 +1,10 @@
 """
-Creates ONE real beneficiary + microfinance_loans row, standing in for
-what a loan officer enters at a facilitation centre -- since
-services/api has no POST /profile yet (that's the eligibility side's
-endpoint, someone else's to build, not implemented anywhere in this
-repo today). This is the ONLY way to get a "real" customer into the
-system for testing right now, as opposed to SKIP_ELIGIBILITY_CHECK's
-auto-provisioned test rows.
+Creates real beneficiary + microfinance_loans rows, standing in for what
+a loan officer enters at a facilitation centre -- since services/api has
+no POST /profile yet (that's the eligibility side's endpoint, someone
+else's to build, not implemented anywhere in this repo today). This is
+the ONLY way to get a "real" customer into the system for testing right
+now, as opposed to SKIP_ELIGIBILITY_CHECK's auto-provisioned test rows.
 
 WHY THIS MATTERS FOR TESTING THE REAL (NOT BYPASSED) GATE
 --------------------------------------------------------------------------
@@ -22,10 +21,11 @@ WHAT THIS DOES NOT DO
 --------------------------
 Does not touch SKIP_ELIGIBILITY_CHECK -- that's still whatever .env says.
 Set it to false first if you want to prove the REAL gate rejects numbers
-NOT created this way (see "Testing the real gate" below).
+NOT created this way.
 
-USAGE
------
+TWO WAYS TO USE THIS
+------------------------
+1. One customer at a time, this file directly:
     cd packages/data
     ../rag/.venv/Scripts/python.exe create_test_customer.py \\
         --phone "+923005559999" \\
@@ -36,6 +36,12 @@ USAGE
 
     # or just answer the prompts:
     ../rag/.venv/Scripts/python.exe create_test_customer.py
+
+2. Many at once, from a spreadsheet -- see import_test_customers.py and
+   test_customers_template.csv (same directory). That script imports
+   create_customer() from THIS file rather than duplicating the logic --
+   one place that knows how to insert a valid customer row, two ways to
+   drive it.
 
 --status defaults to "approved" (Marketplace_Spec.md section 2: eligible
 from approval, doesn't need to wait for disbursement). Pass
@@ -63,28 +69,38 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 VALID_STATUSES = ("approved", "disbursed", "defaulted", "rejected")
 
 
-def run(phone: str, full_name: str, district: str, cluster_id: str, category: str | None, status: str):
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    cur = conn.cursor()
+def create_customer(cur, phone: str, full_name: str, district: str, cluster_id: str,
+                     category: str | None, status: str) -> tuple[str, str]:
+    """
+    Does the actual INSERTs on an ALREADY-OPEN cursor -- deliberately no
+    connect()/commit()/close() in here, so a caller doing many of these
+    in a loop (import_test_customers.py) reuses one connection instead
+    of opening a fresh one per row. See involvement.py's docstring
+    (packages/marketplace) for exactly why that distinction matters on
+    this project's database specifically.
 
+    Raises ValueError (never exits, never prints) for a duplicate phone
+    or an unrecognised trade category -- the CALLER decides whether that
+    means "stop everything" (create_customer.py's CLI, one customer) or
+    "skip this row and keep going" (import_test_customers.py, many rows
+    from a spreadsheet where one typo shouldn't block the rest).
+
+    Returns (beneficiary_id, loan_id). Does NOT commit -- the caller
+    controls the transaction boundary.
+    """
     cur.execute("select id from beneficiary_profiles where phone = %s", (phone,))
     if cur.fetchone():
-        print(f"A beneficiary with phone {phone} already exists -- pick a different number, "
-              "or look it up directly if you meant to reuse it.")
-        cur.close()
-        conn.close()
-        sys.exit(1)
+        raise ValueError(f"a beneficiary with phone {phone} already exists")
 
     category_id = None
     if category:
         cur.execute("select id from trade_categories where name = %s", (category,))
         row = cur.fetchone()
         if row is None:
-            print(f"'{category}' isn't one of the 10 real trade categories -- "
-                  "see packages/data/reference_lists.md for the exact names.")
-            cur.close()
-            conn.close()
-            sys.exit(1)
+            raise ValueError(
+                f"'{category}' isn't one of the 10 real trade categories -- "
+                "see packages/data/reference_lists.md for the exact names"
+            )
         category_id = row[0]
 
     beneficiary_id = str(uuid.uuid4())
@@ -107,18 +123,35 @@ def run(phone: str, full_name: str, district: str, cluster_id: str, category: st
             f"Loan for {category or 'personal needs'}", status, amount, disbursed_on,
         ),
     )
+    return beneficiary_id, loan_id
+
+
+def run(phone: str, full_name: str, district: str, cluster_id: str, category: str | None, status: str):
+    """CLI entry point -- one customer, connects/commits/closes itself, prints next steps."""
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+
+    try:
+        beneficiary_id, loan_id = create_customer(cur, phone, full_name, district, cluster_id, category, status)
+    except ValueError as e:
+        print(str(e))
+        cur.close()
+        conn.close()
+        sys.exit(1)
+
     conn.commit()
     cur.close()
     conn.close()
 
+    category_id_set = bool(category)
     print(f"\nCreated beneficiary {beneficiary_id}")
     print(f"Created loan {loan_id} (status={status}, category={category or 'none -- no business'})")
     print(f"\n--- Test the real (non-bypassed) login gate ---")
     print(f"Set SKIP_ELIGIBILITY_CHECK=false in .env, restart the API server, then log in with:")
     print(f"  phone: {phone}")
-    if status not in ("approved", "disbursed") or category_id is None:
+    if status not in ("approved", "disbursed") or not category_id_set:
         print(f"  (this one is EXPECTED to fail the gate -- status={status}, "
-              f"category={'set' if category_id else 'none'})")
+              f"category={'set' if category_id_set else 'none'})")
 
     key = os.environ.get("INTERNAL_API_KEY", "<INTERNAL_API_KEY from .env>")
     print(f"\n--- Test the loan-approved webhook (marketplace_invitations SMS) LIVE ---")
