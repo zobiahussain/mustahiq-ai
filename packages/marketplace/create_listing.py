@@ -48,7 +48,10 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 # Marketplace_Spec.md section 3.1, verbatim -- the ONE LLM call in the
-# whole listing-creation flow.
+# whole listing-creation flow, from the card-based design. Kept working
+# (still used if a caller wants just the text-enrichment step on its
+# own) even though FULL_DRAFT_PROMPT below is now the primary path -- see
+# draft_full_listing_from_speech()'s docstring.
 ENRICHMENT_PROMPT = """
 Trade category: {trade_category}
 They wrote: "{raw_text}"
@@ -61,6 +64,48 @@ Return JSON:
   "product_or_service_original": "their exact words unchanged",
   "skills_en": "comma-separated skills in English"
 }}
+"""
+
+# The voice-first draft -- REPLACED the 5-card form as the primary
+# listing-creation path, 5 Sep 2026. Drafts everything a free-form
+# recording COULD contain -- see draft_full_listing_from_speech()'s
+# docstring for exactly what this prompt is deliberately NOT asked to
+# decide, and why.
+FULL_DRAFT_PROMPT = """
+A small-business owner in Pakistan recorded (or typed) a description of
+their business, in their own words, in whatever language felt natural.
+Trade category (already known, don't re-derive it): {trade_category}
+
+What they said: "{raw_text}"
+
+Read it and draft a marketplace listing. Return JSON:
+{{
+  "role": "exactly one of: supplier, producer, retailer, service, logistics
+     -- pick whichever best matches what they described",
+  "seeking_inputs": true/false -- do they mention needing MATERIALS or
+     supplies from someone else,
+  "seeking_workers": true/false -- do they mention wanting to HIRE someone,
+  "seeking_partner": true/false -- do they mention wanting a business PARTNER,
+  "seeking_work": true/false -- do they mention looking for WORK or a job
+     themselves (they are the one seeking employment, not the employer),
+  "business_name": "a business name if they said one, otherwise null",
+  "product_or_service_en": "expanded English description for semantic
+     matching -- include the craft, typical outputs, and related terms a
+     supplier or employer would search for",
+  "product_or_service_original": "their exact words, only lightly cleaned
+     up for readability -- never invent detail they didn't say",
+  "skills_en": "comma-separated skills in English, or null if none are
+     clearly implied",
+  "is_women_led": true/false -- ONLY true if they explicitly said this is
+     a woman-led business; false if not mentioned, never guess from a name,
+  "monthly_capacity": "a capacity figure if they mentioned one (e.g. '50
+     pieces a month'), otherwise null",
+  "price_range": "a price range if they mentioned one, otherwise null"
+}}
+
+If a field genuinely isn't discoverable from what they said, use false
+(for the booleans) or null (for the text fields) -- never invent
+specifics they didn't mention.
 """
 
 
@@ -125,6 +170,72 @@ def enrich_listing_text(beneficiary_id: str, raw_text: str) -> dict:
         ENRICHMENT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
     )
     return enrichment
+
+
+def draft_full_listing_from_speech(beneficiary_id: str, raw_text: str) -> dict:
+    """
+    STEP 1, voice-first version -- replaces the 5-card form's separate
+    role/seeking-flags/description taps with ONE recording (or typed
+    text) and ONE richer LLM call that drafts the whole listing at once.
+
+    WHY THIS CHANGE, 5 SEP 2026 -- DIRECT FEEDBACK, NOT A GUESS
+    --------------------------------------------------------------------
+    Two things pointed the same direction at once: (1) the 5-card form
+    was real, measurable friction -- multiple tap-through screens is a
+    much bigger ask of a low-literacy, first-time app user than of
+    someone testing on a laptop, and (2) once the form went structured
+    (role, seeking flags, etc. all became taps), semantic search stopped
+    doing much real work -- most of the actual matching could run off
+    those structured fields alone. The ORIGINAL concept -- someone just
+    talks, in whatever words, and the system figures out the rest -- is
+    what actually justifies embeddings existing at all: you cannot
+    pre-build a filter for something you don't know the shape of in
+    advance. This function is that concept, built for real.
+
+    WHAT THIS DELIBERATELY DOES NOT DRAFT, AND WHY THAT'S NOT AN OVERSIGHT
+    --------------------------------------------------------------------------
+    is_remote_capable, output_is_physical, and the three
+    will_deliver_outside_area / will_relocate_for_work /
+    will_partner_outside_district flags are NEVER asked here, on purpose
+    -- an earlier version of THIS SAME MODULE already tried letting the
+    LLM guess is_remote_capable and reverted it (see save_listing()'s
+    docstring history / Marketplace_Spec.md section 3.1): these five
+    fields are genuine WHERE-clause FILTERS (Marketplace_Spec.md section
+    5, step 2), not ranking weights -- getting one wrong doesn't just
+    rank a listing lower, it silently excludes it from an entire class
+    of matches, possibly forever, with nobody noticing. Too much to hang
+    on a language-model guess when a plain, mandatory tap on the review
+    screen costs almost nothing. The frontend review screen (not this
+    function) is responsible for always asking these five explicitly,
+    with no default that lets someone skip past them un-answered.
+
+    Same guard as enrich_listing_text() -- raises ValueError if this
+    beneficiary has no qualifying trade category.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+
+    context = _fetch_beneficiary_context(cur, beneficiary_id)
+    if context["trade_category_id"] is None:
+        cur.close()
+        conn.close()
+        raise ValueError(
+            f"beneficiary {beneficiary_id} has no qualifying trade category -- "
+            "see al_khidmat_marketplace_schema.sql reference query G"
+        )
+
+    cur.execute(
+        "select name from trade_categories where id = %s",
+        (context["trade_category_id"],),
+    )
+    trade_category_name = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+
+    draft = chat_json(
+        FULL_DRAFT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
+    )
+    return draft
 
 
 def save_listing(

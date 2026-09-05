@@ -102,7 +102,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "marketplace"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "rag"))
 from auth import request_otp, verify_otp, get_me_context  # noqa: E402
-from create_listing import enrich_listing_text, save_listing  # noqa: E402
+from create_listing import enrich_listing_text, draft_full_listing_from_speech, save_listing  # noqa: E402
 from matching_pipeline import match_and_notify  # noqa: E402
 from persist import get_stored_matches, dismiss_match  # noqa: E402
 from search import search_listings  # noqa: E402
@@ -110,7 +110,8 @@ from groq_client import transcribe_audio  # noqa: E402
 from reporting import get_impact_report  # noqa: E402
 from ventures import form_venture  # noqa: E402
 from logistics import add_logistics_route  # noqa: E402
-from listings import set_availability  # noqa: E402
+from listings import set_availability, get_listing_detail  # noqa: E402
+from photos import upload_photo, delete_photo  # noqa: E402
 from graduation import (  # noqa: E402
     record_donation,
     confirm_match_connection,
@@ -332,10 +333,43 @@ def me_context(beneficiary_id: str = Depends(get_current_beneficiary)):
 
 @app.post("/listing/extract")
 def listing_extract(body: ExtractBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """The card-based form's draft step -- kept working, but /listing/draft below is now the primary path."""
     try:
         return enrich_listing_text(beneficiary_id, body.raw_text)
     except ValueError as e:
         raise HTTPException(403, str(e))
+
+
+@app.post("/listing/draft")
+def listing_draft(body: ExtractBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Voice-first path, added 5 Sep 2026 -- one recording (transcribed via
+    POST /listing/transcribe, same as before) or typed text goes in, a
+    full listing draft comes back: role, seeking flags, description,
+    skills, and a few optional fields IF actually mentioned. See
+    create_listing.py:draft_full_listing_from_speech()'s docstring for
+    exactly what this deliberately does NOT draft (is_remote_capable,
+    output_is_physical, and the three travel-willingness flags) and why
+    -- the frontend's review screen must always ask those explicitly.
+    """
+    try:
+        return draft_full_listing_from_speech(beneficiary_id, body.raw_text)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.get("/listing/{listing_id}")
+def listing_detail(listing_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Added 5 Sep 2026 -- "I should be able to click on my listing... and
+    see their details as well." Full single-listing read: every field,
+    other_involvements (section 9.4), and photos -- everything a
+    dedicated listing page needs in one call.
+    """
+    detail = get_listing_detail(listing_id, viewer_beneficiary_id=beneficiary_id)
+    if detail is None:
+        raise HTTPException(404, "no active listing with that id")
+    return detail
 
 
 @app.post("/listing")
@@ -413,6 +447,37 @@ async def listing_transcribe(
     audio_bytes = await audio.read()
     text = transcribe_audio(audio_bytes, audio.filename or "audio.webm")
     return {"text": text}
+
+
+@app.post("/listing/{listing_id}/photos")
+async def listing_upload_photo(
+    listing_id: str,
+    photo: UploadFile = File(...),
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
+    """
+    Added 5 Sep 2026 -- "enter pictures if I want to create a proper
+    portfolio." Multipart upload, same pattern as /listing/transcribe.
+    Ownership, the 6-photo cap, and the 5MB/jpeg-png-webp limits are all
+    enforced in photos.py, not here -- this endpoint is just the HTTP
+    plumbing, same rule as every other route in this file.
+    """
+    photo_bytes = await photo.read()
+    try:
+        return upload_photo(beneficiary_id, listing_id, photo_bytes, photo.content_type)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.delete("/photos/{photo_id}")
+def photo_delete(photo_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    try:
+        delete_photo(beneficiary_id, photo_id)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"deleted": True}
 
 
 @app.get("/listings/search")

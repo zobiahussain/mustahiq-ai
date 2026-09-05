@@ -585,6 +585,28 @@ create index on graduation_events (beneficiary_id, event_type);
 
 
 -- ============================================================
+-- 13. LISTING PHOTOS -- added 5 Sep 2026, direct request: "I should be
+-- able to click on my listing, browse, enter pictures if I want to
+-- create a proper portfolio." Files live in Supabase Storage (the
+-- "listing-photos" bucket, public-read, 5MB/file, jpeg/png/webp only --
+-- created via the Storage REST API, not the dashboard); this table only
+-- ever stores the resulting path/URL, never the image bytes themselves
+-- -- keeping binary data out of Postgres, same reasoning as embeddings
+-- staying a fixed-size vector rather than raw text blobs.
+-- ============================================================
+
+create table listing_photos (
+    id                      uuid primary key default gen_random_uuid(),
+    listing_id              uuid not null references store_listings(id) on delete cascade,
+    storage_path            text not null,   -- path within the bucket, e.g. "<listing_id>/<uuid>.jpg"
+    url                     text not null,   -- full public URL, computed once at upload time
+    uploaded_at             timestamptz default now()
+);
+
+create index on listing_photos (listing_id);
+
+
+-- ============================================================
 -- REFERENCE QUERIES
 -- ============================================================
 

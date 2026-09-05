@@ -28,6 +28,9 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
+from involvement import get_other_involvements
+from photos import list_photos
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 VALID_AVAILABILITY = ("seeking", "open_to_offers", "committed")
@@ -64,3 +67,69 @@ def set_availability(beneficiary_id: str, listing_id: str, availability: str) ->
     conn.commit()
     cur.close()
     conn.close()
+
+
+def get_listing_detail(listing_id: str, viewer_beneficiary_id: str | None = None) -> dict | None:
+    """
+    Added 5 Sep 2026 -- direct request: "I should be able to click on my
+    listing... and see their details as well. There should not be just a
+    tab." No dedicated "one listing's full detail" read existed anywhere
+    before this -- search.py and persist.py both return partial,
+    list-shaped rows for a page of many listings; this is the one full
+    detail, for one specific listing_id.
+
+    Returns None if the listing doesn't exist (or isn't active) --
+    callers turn that into a 404, this function just reports the fact.
+
+    viewer_beneficiary_id is optional -- when given, the response
+    includes is_owner, so the frontend can decide whether to show
+    owner-only controls (edit availability, upload a photo) without a
+    second round trip.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        select sl.id, sl.business_name, sl.role, tc.name as trade_category,
+               sl.product_or_service_en, sl.product_or_service_original,
+               sl.skills_en, sl.skills_original,
+               sl.monthly_capacity, sl.price_range,
+               sl.district, sl.cluster_id, sl.city,
+               sl.seeking_inputs, sl.seeking_workers, sl.seeking_partner, sl.seeking_work,
+               sl.is_remote_capable, sl.output_is_physical,
+               sl.will_deliver_outside_area, sl.will_relocate_for_work, sl.will_partner_outside_district,
+               sl.is_women_led, sl.availability, sl.created_at
+        from store_listings sl
+        left join trade_categories tc on tc.id = sl.trade_category_id
+        where sl.id = %s and sl.active = true
+        """,
+        (listing_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        cur.close()
+        conn.close()
+        return None
+    columns = [d[0] for d in cur.description]
+    detail = dict(zip(columns, row))
+
+    is_owner = False
+    if viewer_beneficiary_id:
+        cur.execute(
+            """
+            select 1 from listing_participants
+            where listing_id = %s and beneficiary_id = %s
+              and role = 'owner' and status = 'confirmed'
+            """,
+            (listing_id, viewer_beneficiary_id),
+        )
+        is_owner = cur.fetchone() is not None
+
+    cur.close()
+    conn.close()
+
+    detail["is_owner"] = is_owner
+    detail["other_involvements"] = get_other_involvements(listing_id)
+    detail["photos"] = list_photos(listing_id)
+    return detail
