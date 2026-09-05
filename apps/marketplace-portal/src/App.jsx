@@ -2,11 +2,12 @@ import { useState } from "react";
 import { requestOtp, verifyOtp, getMeContext } from "./api.js";
 import ListingWizard from "./ListingWizard.jsx";
 import MatchResults from "./MatchResults.jsx";
-import Search from "./Search.jsx";
+import ListingDetail from "./ListingDetail.jsx";
+import Home from "./Home.jsx";
 import Header from "./Header.jsx";
 
 export default function App() {
-  // "phone" | "code" | "dashboard" | "createListing" | "matches" | "search"
+  // "phone" | "code" | "home" | "createListing" | "matches" | "listingDetail"
   const [step, setStep] = useState("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -26,6 +27,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [newListingId, setNewListingId] = useState(null);
+  const [selectedListingId, setSelectedListingId] = useState(null);
 
   async function handleRequestOtp(e) {
     e.preventDefault();
@@ -54,7 +56,7 @@ export default function App() {
       setToken(result.token);
       const ctx = await getMeContext(result.token);
       setContext(ctx);
-      setStep("dashboard");
+      setStep("home");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -75,57 +77,40 @@ export default function App() {
   }
 
   if (step === "matches") {
-    return <MatchResults token={token} listingId={newListingId} onBack={() => setStep("dashboard")} />;
-  }
-
-  if (step === "search") {
-    return <Search token={token} onBack={() => setStep("dashboard")} />;
-  }
-
-  if (step === "dashboard" && context) {
     return (
-      <div className="page">
-        <Header subtitle={context.full_name} />
-        <div className="card">
-          <div className="dashboard-row">
-            <span className="dashboard-label">District</span>
-            <span>{context.district}</span>
-          </div>
-          <div className="dashboard-row">
-            <span className="dashboard-label">Cluster</span>
-            <span>{context.cluster_id ?? "not set by staff yet"}</span>
-          </div>
-          <div className="dashboard-row">
-            <span className="dashboard-label">Trade category</span>
-            <span>{context.trade_category ?? "none on file"}</span>
-          </div>
-          <div className="dashboard-row">
-            <span className="dashboard-label">Stated purpose</span>
-            <span>{context.stated_purpose}</span>
-          </div>
-        </div>
+      <MatchResults
+        token={token}
+        listingId={newListingId}
+        onBack={() => setStep("home")}
+        onSelectListing={(id) => {
+          setSelectedListingId(id);
+          setStep("listingDetail");
+        }}
+      />
+    );
+  }
 
-        {/* Search is available regardless of can_create_listing --
-            browsing the marketplace was never conditional on having your
-            own listing or being matched to anything. */}
-        <button
-          className="btn btn-secondary btn-block"
-          style={{ marginBottom: 10 }}
-          onClick={() => setStep("search")}
-        >
-          Search the Marketplace <span style={{ fontFamily: "var(--font-ur)", marginLeft: 6 }}>مارکیٹ پلیس تلاش کریں</span>
-        </button>
+  if (step === "listingDetail") {
+    return (
+      <ListingDetail
+        token={token}
+        listingId={selectedListingId}
+        onBack={() => setStep("home")}
+      />
+    );
+  }
 
-        {context.can_create_listing ? (
-          <button className="btn btn-primary btn-block" onClick={() => setStep("createListing")}>
-            Create a Listing <span style={{ fontFamily: "var(--font-ur)", marginLeft: 6 }}>فہرست بنائیں</span>
-          </button>
-        ) : (
-          <p style={{ color: "var(--color-ink-soft)", fontSize: 14 }}>
-            Your loan isn't for a business, so listing creation isn't available.
-          </p>
-        )}
-      </div>
+  if (step === "home" && context) {
+    return (
+      <Home
+        token={token}
+        context={context}
+        onCreateListing={() => setStep("createListing")}
+        onSelectListing={(id) => {
+          setSelectedListingId(id);
+          setStep("listingDetail");
+        }}
+      />
     );
   }
 

@@ -61,11 +61,66 @@ export async function extractListingText(token, rawText) {
   return asJson(res);
 }
 
+// Voice-first path, added 5 Sep 2026 -- one recording/typed description
+// in, a FULL listing draft back (role, seeking flags, description,
+// skills, business name, ...). Deliberately does NOT include
+// is_remote_capable/output_is_physical/travel flags -- see
+// create_listing.py:draft_full_listing_from_speech()'s docstring for
+// why those stay a mandatory explicit tap on the review screen, never
+// drafted by the model.
+export async function draftListing(token, rawText) {
+  const res = await fetch(`${API_BASE}/listing/draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ raw_text: rawText }),
+  });
+  return asJson(res);
+}
+
 export async function saveListing(token, payload) {
   const res = await fetch(`${API_BASE}/listing`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(payload),
+  });
+  return asJson(res);
+}
+
+export async function getListingDetail(token, listingId) {
+  const res = await fetch(`${API_BASE}/listing/${listingId}`, {
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
+
+export async function uploadListingPhoto(token, listingId, fileBlob) {
+  const formData = new FormData();
+  formData.append("photo", fileBlob, fileBlob.name || "photo.jpg");
+  const res = await fetch(`${API_BASE}/listing/${listingId}/photos`, {
+    method: "POST",
+    headers: authHeaders(token), // no Content-Type -- see transcribeAudio()'s note, same reason
+    body: formData,
+  });
+  return asJson(res);
+}
+
+export async function deleteListingPhoto(token, photoId) {
+  const res = await fetch(`${API_BASE}/photos/${photoId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
+
+// Marketplace_Spec.md section 8 -- "a listing carries an availability
+// status the person controls." The backend endpoint existed before this
+// wrapper did; nothing in the app called it until the listing detail
+// page (ListingDetail.jsx) needed a real control for it.
+export async function setListingAvailability(token, listingId, availability) {
+  const res = await fetch(`${API_BASE}/listing/${listingId}/availability`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ availability }),
   });
   return asJson(res);
 }

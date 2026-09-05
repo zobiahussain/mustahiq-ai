@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { getListingMatches, dismissMatch } from "./api.js";
 import Header from "./Header.jsx";
 
-export default function MatchResults({ token, listingId, onBack }) {
+// Clarity pass, 5 Sep 2026 -- direct feedback: "I'm not able to see the
+// matches triggers properly." Two real problems fixed: (1) a raw
+// similarity score ("score 0.734") means nothing to someone reading
+// this -- the plain-language `reason` text already IS the explanation,
+// so the number is dropped, not added to; (2) cards are now clickable,
+// same as Home.jsx's browse cards -- you can see the FULL listing
+// before deciding whether to act on a match, not just a two-line
+// summary.
+
+export default function MatchResults({ token, listingId, onBack, onSelectListing }) {
   const [matches, setMatches] = useState(null);
   const [error, setError] = useState(null);
 
@@ -12,7 +21,8 @@ export default function MatchResults({ token, listingId, onBack }) {
       .catch((err) => setError(err.message));
   }, [token, listingId]);
 
-  async function handleDismiss(matchId) {
+  async function handleDismiss(e, matchId) {
+    e.stopPropagation(); // don't also trigger the card's click-through
     try {
       await dismissMatch(token, matchId, listingId);
       setMatches((prev) => prev.filter((m) => m.id !== matchId));
@@ -39,7 +49,7 @@ export default function MatchResults({ token, listingId, onBack }) {
       {error && <div className="error-banner">{error}</div>}
 
       {matches === null && !error && (
-        <div className="stagger">
+        <div className="stagger results-grid">
           <div className="skeleton" />
           <div className="skeleton" />
           <div className="skeleton" />
@@ -47,24 +57,51 @@ export default function MatchResults({ token, listingId, onBack }) {
       )}
 
       {matches && matches.length === 0 && (
-        <p style={{ color: "var(--color-ink-soft)" }}>No matches yet -- check back later.</p>
+        <p style={{ color: "var(--color-ink-soft)" }}>
+          No matches yet -- we'll text you the moment someone new joins that fits.
+          <span className="ur" style={{ display: "block", marginTop: 2 }}>
+            ابھی کوئی میچ نہیں -- جیسے ہی کوئی نیا موزوں شخص شامل ہوگا، ہم آپ کو بتائیں گے۔
+          </span>
+        </p>
       )}
 
       {matches && matches.length > 0 && (
-        <div className="stagger">
+        <div className="stagger results-grid">
           {matches.map((m) => (
-            <div key={m.id} className="match-card">
+            // A <div> here, not a <button> -- a "Dismiss" button lives
+            // INSIDE this card, and a <button> nested inside another
+            // <button> is invalid HTML (browsers handle the click
+            // ordering inconsistently). role="button" + tabIndex +
+            // onKeyDown keeps it just as keyboard-accessible as a real
+            // button would be.
+            <div
+              key={m.id}
+              role="button"
+              tabIndex={0}
+              className="match-card match-card-clickable"
+              onClick={() => onSelectListing?.(m.other_id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onSelectListing?.(m.other_id);
+              }}
+            >
               <div className="match-card-name">{m.business_name || "(unnamed business)"}</div>
               <div className="match-meta">
                 <span className="tag tag-primary">{m.match_model.replace("_", " ")}</span>
                 <span className="tag tag-accent">{m.proximity_label}</span>
-                score {m.final_score.toFixed(3)}
               </div>
               <div className="match-reason">{m.reason}</div>
+              {m.other_involvements?.length > 0 && (
+                <div className="match-meta" style={{ marginTop: 6 }}>
+                  {m.other_involvements.map((inv) => (
+                    <span key={inv.id} className="tag">also: {inv.business_name || inv.role}</span>
+                  ))}
+                </div>
+              )}
               <button
+                type="button"
                 className="btn btn-secondary"
                 style={{ marginTop: 10, marginRight: 0, padding: "6px 14px", fontSize: 13 }}
-                onClick={() => handleDismiss(m.id)}
+                onClick={(e) => handleDismiss(e, m.id)}
               >
                 Dismiss <span style={{ fontFamily: "var(--font-ur)" }}>مسترد کریں</span>
               </button>

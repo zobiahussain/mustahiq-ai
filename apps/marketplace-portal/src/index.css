@@ -375,6 +375,69 @@ body {
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-2px);
 }
+
+/* A browse/match card that's also a click target -- Home.jsx and
+   MatchResults.jsx both use this now, so "click a listing to see its
+   details" works consistently everywhere a card appears. Reset the
+   <button>/<div role="button"> defaults (full width, left-aligned text,
+   no default border/font) back to look exactly like a plain .match-card,
+   then add cursor+focus affordances a real link/button needs. */
+.match-card-clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.match-card-clickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* A simple photo grid for ListingDetail.jsx's portfolio -- 3 across on
+   mobile is already enough to browse without scrolling forever; the
+   @media block near the bottom of this file widens it further on a
+   desktop-size viewport, same as .results-grid. */
+.photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.photo-gallery-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+.photo-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.photo-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(28, 38, 32, 0.65);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-delete-btn:hover {
+  background: var(--color-danger);
+}
 .match-card-name {
   font-family: var(--font-display);
   font-weight: 600;
@@ -449,3 +512,45 @@ body {
 .stagger > *:nth-child(5) { animation-delay: 0.18s; }
 .stagger > *:nth-child(6) { animation-delay: 0.22s; }
 .stagger > *:nth-child(n + 7) { animation-delay: 0.26s; }
+
+/* ===========================================================
+   RESPONSIVE PASS -- added 5 Sep 2026, direct feedback: "the UI is so
+   bad... this is not helping [for] a laptop demo." Everything above this
+   point was written mobile-only (.page capped at 520px, a single-column
+   list for every result). Rather than a separate desktop layout (a
+   bigger, slower rebuild), this widens and re-flows the SAME components
+   past a breakpoint -- same markup, same classes, the phone-app version
+   still renders unchanged below 900px. That's the deliberate trade-off:
+   faster to ship, and the mobile experience (what an actual beneficiary
+   uses) is untouched either way.
+   =========================================================== */
+@media (min-width: 900px) {
+  .page {
+    max-width: 1100px;
+    padding: 40px 32px 72px;
+  }
+
+  /* Browse/match results become a real multi-column grid instead of a
+     single-column phone list -- results-grid is added alongside
+     .stagger (which still only controls animation timing, unrelated to
+     layout) on Home.jsx's and MatchResults.jsx's result containers. */
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  .results-grid > .match-card {
+    margin-bottom: 0; /* the grid's `gap` replaces the mobile stacked margin */
+  }
+
+  /* A wide screen can show more of a portfolio at once without feeling
+     cramped, the way 3-across already does on a phone. */
+  .photo-gallery {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  /* Card-based forms (ListingWizard) stay single-column and centered on
+     their own natural reading width even on a wide screen -- a 1100px
+     wide multiple-choice form would be harder to scan, not easier. */
+}
