@@ -37,31 +37,62 @@ only ever occupies memory once it's actually used, not at process startup.
 """
 
 import os
+from pathlib import Path
 
-# WHY THIS HAS TO BE SET BEFORE THE sentence_transformers IMPORT
+MODEL_NAME = "BAAI/bge-base-en-v1.5"
+EMBEDDING_DIM = 768
+
+
+def _model_is_cached(repo_id: str) -> bool:
+    """
+    True if this model's files are already sitting in the local Hugging Face
+    cache. Pure filesystem check -- no imports, no network -- so it's safe to
+    call before `sentence_transformers` is imported below.
+
+    HF stores every model under `<cache>/hub/models--<org>--<name>/snapshots/`.
+    The cache root is HF_HUB_CACHE, else HF_HOME/hub, else ~/.cache/huggingface/hub
+    (same precedence huggingface_hub itself uses).
+    """
+    cache_root = os.environ.get("HF_HUB_CACHE")
+    if not cache_root:
+        hf_home = os.environ.get("HF_HOME") or str(Path.home() / ".cache" / "huggingface")
+        cache_root = os.path.join(hf_home, "hub")
+    snapshots = Path(cache_root) / f"models--{repo_id.replace('/', '--')}" / "snapshots"
+    return snapshots.is_dir() and any(snapshots.iterdir())
+
+
+# WHY HF_HUB_OFFLINE HAS TO BE SET BEFORE THE sentence_transformers IMPORT
 # --------------------------------------------------------------------
 # "Vector search felt slow" turned out to mostly be this, not the actual
 # search: every time a fresh process calls SentenceTransformer(MODEL_NAME)
 # for the first time, huggingface_hub -- underneath sentence-transformers
 # -- makes a real network call (a HEAD request) to check whether a newer
 # version of the model exists on the Hub, EVEN THOUGH the model is
-# already fully downloaded and cached locally (confirmed: it's sitting in
-# ~/.cache/huggingface/hub). That network round-trip is what was slow,
-# and on one flaky connection it's also what produced the WinError 10054
-# we hit earlier tonight. HF_HUB_OFFLINE=1 tells huggingface_hub to never
-# touch the network at all -- use the local cache or fail loudly, no
-# freshness check. Safe here because the model IS cached; if it weren't,
-# this would need to come off for one run to actually download it. It has
-# to be set as an environment variable BEFORE `from sentence_transformers
-# import SentenceTransformer` runs, because huggingface_hub reads it once
-# at import time, not per-call -- setting it later (e.g. inside
-# _get_model()) would be too late.
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# already fully downloaded and cached locally. That network round-trip is
+# what was slow, and on one flaky connection it's also what produced the
+# WinError 10054 we hit earlier. HF_HUB_OFFLINE=1 tells huggingface_hub to
+# never touch the network at all -- use the local cache or fail loudly, no
+# freshness check. It has to be an environment variable set BEFORE
+# `from sentence_transformers import SentenceTransformer` runs, because
+# huggingface_hub reads it once at import time, not per-call.
+#
+# BUT: forcing offline mode only works once the model is actually cached.
+# On a brand-new machine the cache is empty, so we leave the network ON for
+# that first run to let the ~420MB download happen, and only switch to the
+# fast offline path once _model_is_cached() confirms it's there. Every run
+# after the first download gets the offline path automatically -- no manual
+# "unset HF_HUB_OFFLINE for one run" step, which the old setup docs missed.
+# An explicit HF_HUB_OFFLINE in the environment always wins (setdefault).
+if _model_is_cached(MODEL_NAME):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+else:
+    print(
+        f"[embeddings] {MODEL_NAME} is not in the local Hugging Face cache -- "
+        "this first run will download it (~420MB) from huggingface.co. "
+        "Every run after this one loads it offline from the cache."
+    )
 
 from sentence_transformers import SentenceTransformer  # noqa: E402
-
-MODEL_NAME = "BAAI/bge-base-en-v1.5"
-EMBEDDING_DIM = 768
 
 _model: SentenceTransformer | None = None
 

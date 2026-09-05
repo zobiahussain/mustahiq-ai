@@ -70,11 +70,30 @@ python -m venv .venv
 pip install -r requirements.txt -r ..\..\services\api\requirements.txt
 ```
 
-Needs Python 3.11+ already on the machine (`python --version` to check).
+Needs Python 3.11+ (`python --version` to check). If `python` on this machine is an
+older 3.10.x, use the version launcher for the venv line instead — the rest is
+unchanged:
+
+```powershell
+py -3.11 -m venv .venv      # then Activate.ps1 + pip install as above
+```
+
+The first thing that touches embeddings will download the model (~420MB) from
+huggingface.co on that one run — `embeddings.py` detects an empty cache and allows it,
+then pins itself to the offline cache for every run after. No manual step; just don't be
+offline for the very first embedding call.
 
 ---
 
 ## 4. Node setup — the marketplace app
+
+Needs Node.js 18+ (`node --version`). If it isn't installed:
+
+```powershell
+winget install -e --id OpenJS.NodeJS.LTS
+```
+
+Then, in a **new** terminal (so `node`/`npm` are on PATH):
 
 ```powershell
 cd apps\marketplace-portal
