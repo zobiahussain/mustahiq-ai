@@ -3,11 +3,12 @@ import { requestOtp, verifyOtp, getMeContext } from "./api.js";
 import ListingWizard from "./ListingWizard.jsx";
 import MatchResults from "./MatchResults.jsx";
 import ListingDetail from "./ListingDetail.jsx";
+import Chat from "./Chat.jsx";
 import Home from "./Home.jsx";
 import Header from "./Header.jsx";
 
 export default function App() {
-  // "phone" | "code" | "home" | "createListing" | "matches" | "listingDetail"
+  // "phone" | "code" | "home" | "createListing" | "matches" | "listingDetail" | "chat"
   const [step, setStep] = useState("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -28,6 +29,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [newListingId, setNewListingId] = useState(null);
   const [selectedListingId, setSelectedListingId] = useState(null);
+  const [activeChat, setActiveChat] = useState(null); // { matchId, otherBusinessName } -- Chat is only ever reached from "matches", so its Back always returns there
 
   async function handleRequestOtp(e) {
     e.preventDefault();
@@ -86,6 +88,10 @@ export default function App() {
           setSelectedListingId(id);
           setStep("listingDetail");
         }}
+        onOpenChat={(matchId, otherBusinessName) => {
+          setActiveChat({ matchId, otherBusinessName });
+          setStep("chat");
+        }}
       />
     );
   }
@@ -96,6 +102,17 @@ export default function App() {
         token={token}
         listingId={selectedListingId}
         onBack={() => setStep("home")}
+      />
+    );
+  }
+
+  if (step === "chat" && activeChat) {
+    return (
+      <Chat
+        token={token}
+        matchId={activeChat.matchId}
+        otherBusinessName={activeChat.otherBusinessName}
+        onBack={() => setStep("matches")}
       />
     );
   }

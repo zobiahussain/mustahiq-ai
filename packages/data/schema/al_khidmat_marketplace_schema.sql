@@ -509,6 +509,33 @@ create index on marketplace_matches (final_score desc);
 
 
 -- ============================================================
+-- 9b. MATCH MESSAGES -- added 5 Sep 2026, direct request: "there should
+-- be a chat within the marketplace... as soon as you feel like you
+-- already established something, then they can call." Before this,
+-- nothing let two matched parties actually communicate through the
+-- product at all -- no phone number was ever shown, and "the parties
+-- connect themselves" (Marketplace_Spec.md section 7) had no mechanism
+-- behind it. One thread per match, not a general inbox -- a
+-- conversation only ever makes sense in the context of a specific
+-- introduction. Phone numbers are NEVER stored here or added to this
+-- table; see packages/marketplace/messaging.py's get_contact_info() for
+-- where and how a phone number becomes visible (only once
+-- marketplace_matches.status = 'connected', an existing status this
+-- table doesn't touch or duplicate).
+-- ============================================================
+
+create table match_messages (
+    id                      uuid primary key default gen_random_uuid(),
+    match_id                uuid not null references marketplace_matches(id) on delete cascade,
+    sender_beneficiary_id   uuid not null references beneficiary_profiles(id),
+    body                    text not null,
+    sent_at                 timestamptz default now()
+);
+
+create index on match_messages (match_id, sent_at);
+
+
+-- ============================================================
 -- 10. NOTIFICATIONS
 -- SMS and email only. No phone calls -- that would put the burden
 -- back on Al-Khidmat staff, which this module deliberately avoids.

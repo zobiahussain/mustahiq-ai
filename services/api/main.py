@@ -119,6 +119,7 @@ from graduation import (  # noqa: E402
     record_loan_repaid,
 )
 from lifecycle import send_invitation_if_eligible  # noqa: E402
+from messaging import send_message, get_messages, get_contact_info  # noqa: E402
 from embeddings import embed_text  # noqa: E402
 
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -552,12 +553,55 @@ def matches_connect(match_id: str, beneficiary_id: str = Depends(get_current_ben
     Marketplace_Spec.md section 7 -- marks a match 'connected' (the two
     parties actually reached each other), distinct from
     POST /matches/{id}/dismiss. For an employment match, this is also the
-    real hired_employee graduation moment -- see graduation.py.
+    real hired_employee graduation moment -- see graduation.py. ALSO the
+    action that unlocks GET /matches/{id}/contact below -- see
+    messaging.py:get_contact_info()'s docstring for why this is a
+    deliberate explicit action, not an automatic threshold.
     """
     try:
         return confirm_match_connection(match_id, beneficiary_id)
     except ValueError as e:
         raise HTTPException(403, str(e))
+
+
+class SendMessageBody(BaseModel):
+    body: str
+
+
+@app.post("/matches/{match_id}/messages")
+def matches_send_message(match_id: str, body: SendMessageBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Added 5 Sep 2026 -- "there should be a chat within the marketplace."
+    Open to either party the moment a match exists, well before
+    'connected' -- messaging.py's two-stage model.
+    """
+    try:
+        message_id = send_message(match_id, beneficiary_id, body.body)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    return {"message_id": message_id}
+
+
+@app.get("/matches/{match_id}/messages")
+def matches_get_messages(match_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    try:
+        return {"messages": get_messages(match_id, beneficiary_id)}
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.get("/matches/{match_id}/contact")
+def matches_get_contact(match_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
+    """
+    Returns the other party's name and phone ONLY once this match is
+    'connected' (POST /matches/{id}/connect) AND the caller is actually
+    one of its two parties -- 404 otherwise, same "not connected yet"
+    and "not your match" both just mean nothing to show here.
+    """
+    contact = get_contact_info(match_id, beneficiary_id)
+    if contact is None:
+        raise HTTPException(404, "no contact info available -- match may not be connected yet")
+    return contact
 
 
 @app.post("/me/no-longer-seeking")

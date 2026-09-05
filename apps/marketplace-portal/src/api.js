@@ -141,6 +141,44 @@ export async function dismissMatch(token, matchId, dismissingListingId) {
   return asJson(res);
 }
 
+// Chat, added 5 Sep 2026 -- direct request: "there should be a chat
+// within the marketplace." Open the moment a match exists, well before
+// either side marks it "connected" -- see messaging.py's docstring for
+// the full two-stage reasoning.
+export async function sendMatchMessage(token, matchId, body) {
+  const res = await fetch(`${API_BASE}/matches/${matchId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ body }),
+  });
+  return asJson(res);
+}
+
+export async function getMatchMessages(token, matchId) {
+  const res = await fetch(`${API_BASE}/matches/${matchId}/messages`, {
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
+
+export async function connectMatch(token, matchId) {
+  const res = await fetch(`${API_BASE}/matches/${matchId}/connect`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
+
+// Returns {full_name, phone} once connected, or throws (404) before
+// that -- see messaging.py:get_contact_info()'s docstring for why this
+// is gated behind an explicit "connect" action rather than automatic.
+export async function getMatchContact(token, matchId) {
+  const res = await fetch(`${API_BASE}/matches/${matchId}/contact`, {
+    headers: authHeaders(token),
+  });
+  return asJson(res);
+}
+
 export async function transcribeAudio(token, audioBlob) {
   const formData = new FormData();
   formData.append("audio", audioBlob, "recording.webm");

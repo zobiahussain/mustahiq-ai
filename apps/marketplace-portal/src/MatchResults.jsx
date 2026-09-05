@@ -11,7 +11,7 @@ import Header from "./Header.jsx";
 // before deciding whether to act on a match, not just a two-line
 // summary.
 
-export default function MatchResults({ token, listingId, onBack, onSelectListing }) {
+export default function MatchResults({ token, listingId, onBack, onSelectListing, onOpenChat }) {
   const [matches, setMatches] = useState(null);
   const [error, setError] = useState(null);
 
@@ -97,6 +97,17 @@ export default function MatchResults({ token, listingId, onBack, onSelectListing
                   ))}
                 </div>
               )}
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ marginTop: 10, padding: "6px 14px", fontSize: 13 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenChat?.(m.id, m.business_name);
+                }}
+              >
+                Message <span style={{ fontFamily: "var(--font-ur)" }}>پیغام</span>
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
