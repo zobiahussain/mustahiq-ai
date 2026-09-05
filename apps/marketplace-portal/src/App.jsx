@@ -22,7 +22,8 @@ export default function App() {
     "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery",
     "Livestock", "Manufacturing", "Services", "Food",
     "Three-wheeler / rickshaw", "Agriculture", "Freelancing / technology",
-    "Handicrafts & Artisan Crafts",
+    "Handicrafts & Artisan Crafts", "Construction & Home Trades",
+    "Beauty & Personal Care", "Repair & Maintenance", "Education & Tutoring",
   ];
   const [token, setToken] = useState(null);
   const [context, setContext] = useState(null);

@@ -205,8 +205,28 @@ SPECIALTY_SUFFIXES = {
     "Services": [
         ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
         ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Beauty & Personal Care": [
+        ("specializes in bridal packages", "دلہن کے پیکجز میں مہارت"),
+        ("known for using quality, gentle products", "معیاری اور نرم مصنوعات کے لیے مشہور"),
+        ("also offers home-visit appointments", "گھر پر بھی خدمات فراہم کرتے ہیں"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Construction & Home Trades": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
         ("specializes in emergency call-outs", "ہنگامی کالز میں مہارت"),
         ("offers a warranty on all work", "تمام کام پر ضمانت دیتے ہیں"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Repair & Maintenance": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
+        ("offers a warranty on all work", "تمام کام پر ضمانت دیتے ہیں"),
+        ("also does on-site repairs", "موقع پر بھی مرمت کرتے ہیں"),
+    ],
+    "Education & Tutoring": [
+        ("specializes in exam preparation", "امتحان کی تیاری میں مہارت"),
+        ("known for individualized lesson plans", "انفرادی نصاب کے لیے مشہور"),
+        ("also offers group class discounts", "گروپ کلاسز پر رعایت بھی دیتے ہیں"),
     ],
     "Food": [
         ("known for fresh-baked goods every morning", "روزانہ صبح تازہ بیکری کے لیے مشہور"),
@@ -309,16 +329,72 @@ TEMPLATES = {
              ur=["جوتے بنانے کا کام، چمڑا چاہیے", "کپڑا بنانے کا کام، خام مال چاہیے"],
              remote=False, physical=True),
     ],
+    # "Services" split 5 Sep 2026 -- moved out of here into 4 dedicated
+    # categories below (Beauty & Personal Care, Construction & Home
+    # Trades, Repair & Maintenance, Education & Tutoring). See the
+    # schema comment on the same date for why: every real listing that
+    # used to be filed under "Services" was actually one of these four,
+    # and leaving them lumped together was defeating the employment
+    # same-category match rule (an electrician and a beautician
+    # counting as "the same trade").
     "Services": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Laundry and dry-cleaning service -- washing, ironing, seeking steady customers or work"],
+             ur=["لانڈری اور ڈرائی کلیننگ سروس، کام چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={},
+             en=["Courier and documentation service -- local delivery, paperwork and errand assistance"],
+             ur=["کورئیر اور دستاویزات کی خدمات"],
+             remote=False, physical=True),
+    ],
+    "Beauty & Personal Care": [
         dict(role="service", seeking={"seeking_partner": True},
              en=["Beauty parlor and salon services -- haircare, bridal makeup, seeking a partner"],
              ur=["بیوٹی پارلر، شراکت دار چاہیے"],
              remote=False, physical=False, travel="will_partner_outside_district"),
         dict(role="service", seeking={"seeking_work": True},
+             en=["Skilled beautician seeking steady work -- haircare, bridal makeup, skincare"],
+             ur=["ماہر بیوٹیشن، کام کی تلاش میں"],
+             remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Established beauty salon hiring additional staff"],
+             ur=["بیوٹی سیلون، ملازم چاہیے"],
+             remote=False, physical=False),
+    ],
+    "Construction & Home Trades": [
+        dict(role="service", seeking={"seeking_work": True},
              en=["Electrician services -- household and commercial wiring, appliance repair",
                  "Plumbing services -- household repairs and installation, seeking work"],
              ur=["بجلی کا کام، مجھے کام چاہیے", "پلمبنگ کا کام، کام چاہیے"],
              remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Construction contractor hiring skilled tradesmen -- masonry, carpentry, wiring"],
+             ur=["تعمیراتی ٹھیکیدار، ہنر مند مزدور چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={},
+             en=["Carpentry and woodwork -- custom furniture, home fittings and repairs"],
+             ur=["بڑھئی کا کام، فرنیچر اور مرمت"],
+             remote=False, physical=True),
+    ],
+    "Repair & Maintenance": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Mobile phone and appliance repair -- screen replacement, hardware fixes, seeking work"],
+             ur=["موبائل اور آلات کی مرمت، کام چاہیے"],
+             remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={},
+             en=["Vehicle and motorcycle repair workshop -- servicing, parts replacement"],
+             ur=["گاڑی اور موٹرسائیکل مرمت کی ورکشاپ"],
+             remote=False, physical=True),
+    ],
+    "Education & Tutoring": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Online tutoring services -- remote teaching, seeking employment, no travel needed"],
+             ur=["آن لائن ٹیوشن، دور سے کام کر سکتی ہوں"],
+             remote=True, physical=False),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Tutoring academy hiring additional subject teachers"],
+             ur=["ٹیوشن اکیڈمی، اساتذہ چاہیے"],
+             remote=False, physical=False),
     ],
     "Food": [
         dict(role="retailer", seeking={"seeking_inputs": True},
@@ -396,6 +472,10 @@ BUSINESS_NAME_NOUNS = {
     "Livestock": ["Farm", "Livestock Farm", "Dairy Farm"],
     "Manufacturing": ["Works", "Manufacturing", "Industries"],
     "Services": ["Services", "Service Center"],
+    "Beauty & Personal Care": ["Beauty Parlor", "Salon", "Beauty Studio"],
+    "Construction & Home Trades": ["Electric Works", "Home Services", "Trades"],
+    "Repair & Maintenance": ["Repair Center", "Fix-It Shop", "Workshop"],
+    "Education & Tutoring": ["Tutoring", "Academy", "Learning Center"],
     "Food": ["Foods", "Bakery", "Kitchen"],
     "Three-wheeler / rickshaw": ["Transport", "Rickshaw Service", "Logistics"],
     "Agriculture": ["Farms", "Agri Farms"],

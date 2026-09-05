@@ -4,12 +4,14 @@ Pulled straight from the schema so this file can't drift out of sync with what's
 actually in the database. If you change one of these, change it in the schema first,
 then update this file to match.
 
-## The 11 trade categories (`trade_categories`)
+## The 15 trade categories (`trade_categories`)
 
 Source: `packages/data/schema/al_khidmat_marketplace_schema.sql`, section 2. Was 10 until
-5 Sep 2026 — #11 added after a real case (a clay-jewelry maker) had no honest category to
-sit in. Shared with the eligibility side (a loan officer picks one at the loan desk) —
-not marketplace-only, flag any future change to whoever owns that flow too.
+5 Sep 2026, then 11 (added Handicrafts & Artisan Crafts — a real case, a clay-jewelry
+maker, had no honest category to sit in), then 15 the same day (Services split four ways
+-- see #6 below for why). Shared with the eligibility side (a loan officer picks one at
+the loan desk) — not marketplace-only, flag any future change to whoever owns that flow
+too.
 
 1. Trading businesses — general wholesale/import-export/mixed-merchandise trading, not
    food-specific (the catch-all for "buys and sells in bulk" that doesn't fit a narrower
@@ -18,9 +20,15 @@ not marketplace-only, flag any future change to whoever owns that flow too.
 3. Tailoring & embroidery
 4. Livestock
 5. Manufacturing
-6. Services — the deliberate broad catch-all (electricians, beauty parlors, tutoring,
-   repair work, ...) — not split further without a specific evidenced gap, same reasoning
-   as #11 below
+6. Services — was the deliberate broad catch-all for electricians, beauty parlors,
+   tutoring, and repair work too, until this genuinely broke something: matching.py's
+   employment matching treats same-category as a strong signal (an employer hiring for
+   their own trade wants someone in it) -- but an electrician and a beautician being
+   filed under the identical "Services" label meant they'd count as "the same trade" for
+   matching purposes, which is nearly the exact mistake that rule exists to catch.
+   Confirmed directly before splitting: every real "Services" listing in the live seed
+   data was actually one of #12-15 below, not a genuine miscellaneous case. "Services"
+   stays, now as a real, smaller residual catch-all (laundry, courier, and similar).
 7. Food — *making* food (bakeries, catering, home kitchens) — distinct from Grocery, which
    only retails what someone else made
 8. Three-wheeler / rickshaw
@@ -28,6 +36,11 @@ not marketplace-only, flag any future change to whoever owns that flow too.
 10. Freelancing / technology
 11. Handicrafts & Artisan Crafts — pottery, clay work, jewelry-making, crochet/knitting,
     home décor
+12. Construction & Home Trades — mason, carpenter, electrician, plumber, painter
+13. Beauty & Personal Care — parlors, salons, barbers
+14. Repair & Maintenance — mobile/appliance/vehicle repair (distinct from #8, which is
+    about *operating* transport, not fixing things)
+15. Education & Tutoring — home tutors, coaching
 
 A `microfinance_loans` row with `trade_category_id` set to one of these = eligible to
 create a marketplace listing. `trade_category_id = null` = not a business (Liberation

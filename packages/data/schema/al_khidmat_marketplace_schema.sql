@@ -97,7 +97,7 @@ insert into trade_categories (name) values
     ('Three-wheeler / rickshaw'),
     ('Agriculture'),
     ('Freelancing / technology'),
-    ('Handicrafts & Artisan Crafts');  -- added 5 Sep 2026, direct request: pottery, clay
+    ('Handicrafts & Artisan Crafts'),  -- added 5 Sep 2026, direct request: pottery, clay
                                        -- work, jewelry-making, crochet, home decor had no
                                        -- real home in the original 10 -- confirmed live
                                        -- with a real case (a clay-jewelry maker got zero
@@ -105,6 +105,21 @@ insert into trade_categories (name) values
                                        -- This table is shared with the eligibility side
                                        -- (a loan officer picks from it at the loan desk) --
                                        -- flagged here, not silently assumed to be marketplace-only.
+    ('Construction & Home Trades'),   -- added 5 Sep 2026, split out of 'Services' --
+    ('Beauty & Personal Care'),       -- 'Services' was so broad (electrician, beauty
+    ('Repair & Maintenance'),         -- parlor, and tutoring all filed under the same
+    ('Education & Tutoring');         -- label) that it was silently defeating the
+                                       -- employment same-category-match rule
+                                       -- (matching.py's EMPLOYMENT_STRONG_SIMILARITY
+                                       -- gate) -- an electrician and a beauty parlor
+                                       -- would have counted as "the same trade" for
+                                       -- matching purposes, which is nearly the exact
+                                       -- mistake that rule exists to catch. Confirmed
+                                       -- before splitting: every single 'Services'
+                                       -- listing in the live seed data was actually one
+                                       -- of these four, not a genuine miscellaneous
+                                       -- case -- 'Services' itself stays, now as a
+                                       -- real (smaller) residual catch-all.
 
 
 -- ============================================================

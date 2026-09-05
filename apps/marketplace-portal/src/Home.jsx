@@ -19,6 +19,8 @@ const TRADE_CATEGORIES = [
   "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery", "Livestock",
   "Manufacturing", "Services", "Food", "Three-wheeler / rickshaw", "Agriculture",
   "Freelancing / technology", "Handicrafts & Artisan Crafts",
+  "Construction & Home Trades", "Beauty & Personal Care", "Repair & Maintenance",
+  "Education & Tutoring",
 ];
 
 const ROLES = ["supplier", "producer", "retailer", "service", "logistics"];
