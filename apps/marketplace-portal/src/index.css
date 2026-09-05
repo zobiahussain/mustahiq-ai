@@ -124,6 +124,23 @@ body {
   flex-wrap: wrap;
 }
 
+/* Base rule for EVERY .ur span, added 5 Sep 2026 -- found while fixing a
+   reported "translation looks weird" bug that .card-heading .ur and
+   .option-btn .ur (below) were the ONLY places that actually set the
+   Urdu typeface: a plain <span className="ur"> anywhere else (Header's
+   subtitleUr, every disclaimer, most checkbox labels -- roughly a dozen
+   spots across the app) silently fell back to the browser's generic
+   Arabic-script font instead of the Noto Nastaliq Urdu this project
+   deliberately chose (see this file's own opening comment on why that
+   choice was made). Still renders the right characters either way --
+   Unicode doesn't care -- just not in the intended typeface. This base
+   rule is what every OTHER .ur span was missing; the two nested rules
+   below still win on font-size/weight/color for their own contexts,
+   CSS specificity handles that automatically. */
+.ur {
+  font-family: var(--font-ur);
+}
+
 .card-heading .ur {
   font-family: var(--font-ur);
   font-weight: 400;

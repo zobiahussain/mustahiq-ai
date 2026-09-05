@@ -257,7 +257,15 @@ export default function ListingWizard({ token, onDone }) {
             </h3>
             <p className="card-subtext">Tap to change anything that's not quite right.</p>
 
-            <label className="field-label">What best describes your business?</label>
+            {/* Deliberately NOT "your business" -- direct feedback, 5 Sep
+                2026: someone purely seeking employment (seeking_work) has
+                a skill or trade, not necessarily "a business" of their
+                own -- the earlier wording presumed everyone here runs one.
+                This same question serves both cases now, without needing
+                to change depending on what's checked below. */}
+            <label className="field-label">
+              What best describes what you do? <span className="ur" style={{ fontWeight: 400 }}>آپ کیا کرتے ہیں؟</span>
+            </label>
             <div className="chip-row">
               {ROLES.map(([key, ur]) => (
                 <button
