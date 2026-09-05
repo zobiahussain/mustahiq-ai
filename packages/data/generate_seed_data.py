@@ -161,13 +161,95 @@ STATUS_WEIGHTS = [
     ("rejected", 6), ("liberation", 8),  # "liberation" = disbursed, no category
 ]
 
+# SPECIALTY SUFFIXES -- added 5 Sep 2026, direct feedback ("multiple
+# businesses have the same [description]"). Measured directly: 352
+# generated listings, only 46 distinct description texts -- with that
+# few templates spread across ~350 listings, most of a category shares
+# byte-identical text, which means byte-identical embeddings, which
+# makes semantic search trivially "perfect" within a category and
+# genuinely untestable (nothing to actually differentiate on). Rather
+# than hand-writing dozens of full alternate templates (a much bigger
+# authoring job) or an LLM call per listing (real Groq rate-limit risk
+# at this volume, per CLAUDE.md's own risk list), each generated
+# description gets a random per-category "specialty" phrase appended --
+# multiplies (base templates) x (specialty suffixes) worth of distinct
+# text combinations from a much smaller amount of new content, and a
+# real trailing phrase changes the embedding, unlike padding with
+# meaningless filler would.
+SPECIALTY_SUFFIXES = {
+    "Tailoring & embroidery": [
+        ("specializing in bridal wear and formal suits", "شادی اور رسمی لباس میں مہارت"),
+        ("known for quick turnaround on school uniforms", "یونیفارم جلدی تیار کرنے میں مشہور"),
+        ("with a focus on hand embroidery work", "ہاتھ کی کڑھائی پر خاص توجہ"),
+        ("serving both men's and women's clothing", "مردوں اور خواتین دونوں کے کپڑے"),
+        ("also does alterations and repairs", "کپڑوں کی مرمت بھی کرتے ہیں"),
+    ],
+    "Grocery / Karyana": [
+        ("known for competitive wholesale rates", "مسابقتی تھوک نرخوں کے لیے مشہور"),
+        ("carries imported as well as local brands", "درآمدی اور مقامی برانڈز دونوں دستیاب"),
+        ("open long hours, serves the whole neighbourhood", "لمبے اوقات کار، پورا محلہ خدمت میں"),
+        ("also stocks household cleaning supplies", "صفائی کا سامان بھی رکھتے ہیں"),
+    ],
+    "Livestock": [
+        ("specializes in goats for Eid season", "عید کے لیے بکروں میں مہارت"),
+        ("known for healthy, well-fed cattle", "صحت مند مویشیوں کے لیے مشہور"),
+        ("also sells fresh milk daily", "روزانہ تازہ دودھ بھی فروخت"),
+        ("focuses on breeding and rearing", "افزائش اور پرورش پر توجہ"),
+    ],
+    "Manufacturing": [
+        ("specializes in export-quality finishing", "برآمدی معیار کی فنشنگ میں مہارت"),
+        ("known for durable, heavy-duty goods", "پائیدار اور مضبوط سامان کے لیے مشہور"),
+        ("handles both small and bulk orders", "چھوٹے اور بڑے دونوں آرڈر لیتے ہیں"),
+        ("focuses on custom-made pieces", "حسب ضرورت سامان بناتے ہیں"),
+    ],
+    "Services": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+        ("specializes in emergency call-outs", "ہنگامی کالز میں مہارت"),
+        ("offers a warranty on all work", "تمام کام پر ضمانت دیتے ہیں"),
+    ],
+    "Food": [
+        ("known for fresh-baked goods every morning", "روزانہ صبح تازہ بیکری کے لیے مشہور"),
+        ("specializes in wedding and event orders", "شادی اور تقریبات کے آرڈر میں مہارت"),
+        ("also does bulk catering for offices", "دفاتر کے لیے تھوک کیٹرنگ بھی"),
+        ("focuses on traditional home-style recipes", "روایتی گھریلو ذائقے پر توجہ"),
+    ],
+    "Three-wheeler / rickshaw": [
+        ("covers long-distance intercity routes", "طویل فاصلے کے بین شہری روٹس"),
+        ("specializes in same-day small goods delivery", "اسی دن سامان کی ترسیل میں مہارت"),
+        ("known for reliable, on-time service", "قابل اعتماد اور وقت کی پابندی کے لیے مشہور"),
+        ("also available for passenger trips", "مسافروں کے لیے بھی دستیاب"),
+    ],
+    "Agriculture": [
+        ("specializes in seasonal wheat and rice", "موسمی گندم اور چاول میں مہارت"),
+        ("known for organic farming methods", "نامیاتی کاشتکاری کے طریقوں کے لیے مشہور"),
+        ("also supplies to local mandis directly", "مقامی منڈیوں کو براہ راست سپلائی بھی"),
+        ("focuses on high-yield seasonal crops", "زیادہ پیداوار والی موسمی فصلوں پر توجہ"),
+    ],
+    "Freelancing / technology": [
+        ("specializes in e-commerce websites", "ای کامرس ویب سائٹس میں مہارت"),
+        ("known for fast turnaround on small projects", "چھوٹے منصوبوں پر تیز کام کے لیے مشہور"),
+        ("also offers ongoing maintenance support", "مسلسل معاونت بھی فراہم کرتے ہیں"),
+        ("focuses on mobile-friendly design", "موبائل دوست ڈیزائن پر توجہ"),
+    ],
+    "Trading businesses": [
+        ("specializes in bulk import orders", "تھوک درآمدی آرڈرز میں مہارت"),
+        ("known for a wide range of mixed merchandise", "متنوع سامان کی وسیع رینج کے لیے مشہور"),
+        ("also handles export documentation", "برآمدی دستاویزات بھی سنبھالتے ہیں"),
+        ("focuses on household and daily-use goods", "گھریلو اور روزمرہ استعمال کے سامان پر توجہ"),
+    ],
+}
+
+
 # ---------------------------------------------------------------------------
 # Per-trade-category templates. Each entry: role, which seeking flag(s)
 # it sets, a few EN phrasings (picked at random per listing for lexical
 # variety -- 500 identical-text listings in one category would make
 # search/matching trivially easy, not a realistic test), a matching Urdu
 # original, and the two travel/distance gates. Multiple template variants
-# per category so a category isn't just "one business, repeated."
+# per category so a category isn't just "one business, repeated." See
+# SPECIALTY_SUFFIXES above for the second layer of diversity on top of
+# these.
 # ---------------------------------------------------------------------------
 
 TEMPLATES = {
@@ -279,6 +361,37 @@ TEMPLATES = {
 }
 
 
+# One or two plausible nouns per category, for real business names --
+# added 5 Sep 2026, direct feedback: every generated listing's
+# business_name was hardcoded None, so browse/match screens showed
+# "(unnamed business)" for nearly everyone -- reads as "every business
+# has the same name," not as N distinct businesses.
+BUSINESS_NAME_NOUNS = {
+    "Tailoring & embroidery": ["Tailoring", "Boutique", "Stitching House"],
+    "Grocery / Karyana": ["General Store", "Grocery", "Karyana Store"],
+    "Livestock": ["Farm", "Livestock Farm", "Dairy Farm"],
+    "Manufacturing": ["Works", "Manufacturing", "Industries"],
+    "Services": ["Services", "Service Center"],
+    "Food": ["Foods", "Bakery", "Kitchen"],
+    "Three-wheeler / rickshaw": ["Transport", "Rickshaw Service", "Logistics"],
+    "Agriculture": ["Farms", "Agri Farms"],
+    "Freelancing / technology": ["Studio", "Tech Services", "Digital Works"],
+    "Trading businesses": ["Traders", "Trading Co.", "Trading Business"],
+}
+
+
+def _generate_business_name(full_name: str, category_name: str) -> str:
+    first = full_name.split()[0]
+    last = full_name.split()[-1]
+    noun = random.choice(BUSINESS_NAME_NOUNS[category_name])
+    pattern = random.choice([
+        f"{first}'s {noun}",
+        f"{first} {noun}",
+        f"{last} {noun}",
+    ])
+    return pattern
+
+
 def weighted_status():
     statuses = [s for s, _weight in STATUS_WEIGHTS]
     weights = [w for _s, w in STATUS_WEIGHTS]
@@ -313,12 +426,12 @@ def run():
         # (+92300777xxxxx / +92300999xxxxx), so this block is unambiguous
         # to spot in the database later.
         phone = f"+9234{1000000 + i:07d}"
-        beneficiaries.append((str(uuid.uuid4()), name, phone, district, cluster_id))
+        beneficiaries.append((str(uuid.uuid4()), name, phone, district, cluster_id, is_male))
 
     psycopg2.extras.execute_values(
         cur,
         "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) values %s",
-        [(bid, name, phone, district, cluster_id, True) for bid, name, phone, district, cluster_id in beneficiaries],
+        [(bid, name, phone, district, cluster_id, True) for bid, name, phone, district, cluster_id, _is_male in beneficiaries],
     )
     print(f"  {len(beneficiaries)} beneficiary_profiles inserted.")
 
@@ -364,29 +477,43 @@ def run():
     # file docstring).
     # -----------------------------------------------------------------
     print("selecting which eligible beneficiaries actually created a listing...")
-    listing_plans = []  # (beneficiary_id, district, cluster_id, category_name, template)
+    listing_plans = []  # (beneficiary_id, district, cluster_id, category_name, template, business_name, is_women_led)
     for (lid, ref, bid, product, category_id, purpose, status, amount, disbursed_on), \
-        (b_id, name, phone, district, cluster_id) in zip(loan_rows, beneficiaries):
+        (b_id, name, phone, district, cluster_id, is_male) in zip(loan_rows, beneficiaries):
         if status not in ("approved", "disbursed") or category_id is None:
             continue
         if random.random() > LISTING_CREATION_RATE:
             continue
         category_name = next(n for n, cid in category_id_by_name.items() if cid == category_id)
         template = random.choice(TEMPLATES[category_name])
-        listing_plans.append((bid, district, cluster_id, category_name, template))
+        business_name = _generate_business_name(name, category_name)
+        listing_plans.append((bid, district, cluster_id, category_name, template, business_name, not is_male))
 
     print(f"  {len(listing_plans)} listings to create -- embedding in batches...")
     en_texts = []
     ur_texts = []
-    for bid, district, cluster_id, category_name, template in listing_plans:
+    for bid, district, cluster_id, category_name, template, business_name, is_women_led in listing_plans:
         # Pick ONE shared index into en/ur so the two stay a real
         # translation pair -- every template above was written with
         # en[i] and ur[i] as matching phrasings, so picking them
         # independently would risk pairing an English sentence with an
         # unrelated Urdu one for the same listing.
         i = random.randrange(len(template["en"]))
-        en_texts.append(template["en"][i])
-        ur_texts.append(template["ur"][i])
+        en_text = template["en"][i]
+        ur_text = template["ur"][i]
+
+        # SPECIALTY_SUFFIXES layer -- see that dict's own comment. 85%,
+        # not 100%: leaving some listings as the plain base template is
+        # itself realistic (not everyone volunteers a specialty), and
+        # keeps a few genuinely-identical-text pairs around, which is
+        # useful for confirming exact-duplicate handling doesn't break.
+        if category_name in SPECIALTY_SUFFIXES and random.random() < 0.85:
+            en_suffix, ur_suffix = random.choice(SPECIALTY_SUFFIXES[category_name])
+            en_text = f"{en_text} -- {en_suffix}"
+            ur_text = f"{ur_text}، {ur_suffix}"
+
+        en_texts.append(en_text)
+        ur_texts.append(ur_text)
 
     # embed_texts() batches the model call -- see file docstring's
     # "performance" note. Chunked at 100 to keep memory/latency
@@ -400,14 +527,14 @@ def run():
 
     listing_rows = []
     participant_rows = []
-    for (bid, district, cluster_id, category_name, template), en_text, ur_text, vector in zip(
+    for (bid, district, cluster_id, category_name, template, business_name, is_women_led), en_text, ur_text, vector in zip(
         listing_plans, en_texts, ur_texts, vectors
     ):
         listing_id = str(uuid.uuid4())
         seeking = template["seeking"]
         travel_flag = template.get("travel")
         listing_rows.append((
-            listing_id, bid, None, category_id_by_name[category_name],
+            listing_id, bid, business_name, category_id_by_name[category_name],
             en_text, ur_text, None,  # skills_en -- not generated here, matches seed_data.py's style
             template["role"],
             seeking.get("seeking_inputs", False), seeking.get("seeking_workers", False),
@@ -416,7 +543,11 @@ def run():
             travel_flag == "will_deliver_outside_area",
             travel_flag == "will_relocate_for_work",
             travel_flag == "will_partner_outside_district",
-            False,  # is_women_led -- not modeled here; seed_data.py's small hand-set already covers that case
+            is_women_led,  # derived from the owning beneficiary's generated gender -- an
+                            # imperfect proxy (gender isn't the same as who leads a business),
+                            # but a real signal instead of a hardcoded False that zeroed out
+                            # the impact report's women_led_businesses metric for every
+                            # generated listing.
             district, cluster_id, vector,
         ))
         participant_rows.append((listing_id, bid, "owner", "confirmed"))

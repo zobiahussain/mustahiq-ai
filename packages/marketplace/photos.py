@@ -116,9 +116,24 @@ def upload_photo(beneficiary_id: str, listing_id: str, file_bytes: bytes, conten
     return {"id": photo_id, "url": public_url}
 
 
-def list_photos(listing_id: str) -> list[dict]:
-    """Plain read -- no auth needed, same as everything else a listing shows publicly."""
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+def list_photos(listing_id: str, conn=None) -> list[dict]:
+    """
+    Plain read -- no auth needed, same as everything else a listing shows
+    publicly.
+
+    conn: an already-open connection to reuse -- see involvement.py's
+    docstring for why this matters on this project's database (a fresh
+    connection can cost seconds, not milliseconds). Added 5 Sep 2026
+    after get_listing_detail() was caught opening THREE separate
+    connections for one page load (its own, plus one each inside
+    get_other_involvements() and this function) -- the exact bug
+    persist.py/search.py already fixed once, reintroduced here because
+    this function was written fresh without threading a connection
+    through it.
+    """
+    owns_connection = conn is None
+    if owns_connection:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
     cur.execute(
         "select id, url, uploaded_at from listing_photos where listing_id = %s order by uploaded_at",
@@ -127,7 +142,8 @@ def list_photos(listing_id: str) -> list[dict]:
     columns = [d[0] for d in cur.description]
     results = [dict(zip(columns, row)) for row in cur.fetchall()]
     cur.close()
-    conn.close()
+    if owns_connection:
+        conn.close()
     return results
 
 
