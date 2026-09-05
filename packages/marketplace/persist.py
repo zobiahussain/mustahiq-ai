@@ -101,17 +101,18 @@ def persist_matches(source_id: str, matches: list[dict]) -> list[dict]:
             insert into marketplace_matches
                 (match_model, listing_a_id, listing_b_id,
                  similarity_score, proximity_multiplier, final_score,
-                 proximity_label, reason)
+                 proximity_label, reason, reason_ur)
             values (%(match_model)s, %(listing_a_id)s, %(listing_b_id)s,
                     %(similarity)s, %(proximity_multiplier)s, %(final_score)s,
-                    %(proximity_label)s, %(reason)s)
+                    %(proximity_label)s, %(reason)s, %(reason_ur)s)
             on conflict (match_model, listing_a_id, listing_b_id)
             do update set
                 similarity_score = excluded.similarity_score,
                 proximity_multiplier = excluded.proximity_multiplier,
                 final_score = excluded.final_score,
                 proximity_label = excluded.proximity_label,
-                reason = coalesce(excluded.reason, marketplace_matches.reason)
+                reason = coalesce(excluded.reason, marketplace_matches.reason),
+                reason_ur = coalesce(excluded.reason_ur, marketplace_matches.reason_ur)
             returning id, (xmax = 0) as is_new
             """,
             {
@@ -123,6 +124,7 @@ def persist_matches(source_id: str, matches: list[dict]) -> list[dict]:
                 "final_score": m["final_score"],
                 "proximity_label": m["proximity_label"],
                 "reason": m.get("reason"),
+                "reason_ur": m.get("reason_ur"),
             },
         )
         row_id, is_new = cur.fetchone()
@@ -168,7 +170,7 @@ def get_stored_matches(listing_id: str) -> list[dict]:
     cur.execute(
         """
         select mm.id, mm.match_model, mm.final_score, mm.proximity_label,
-               mm.reason, mm.status,
+               mm.reason, mm.reason_ur, mm.status,
                case when mm.listing_a_id = %(listing_id)s then l_b.id else l_a.id end as other_id,
                case when mm.listing_a_id = %(listing_id)s then l_b.business_name else l_a.business_name end as business_name,
                case when mm.listing_a_id = %(listing_id)s then l_b.role else l_a.role end as role,

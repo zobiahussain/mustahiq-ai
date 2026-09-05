@@ -10,6 +10,24 @@ import Header from "./Header.jsx";
 // same as Home.jsx's browse cards -- you can see the FULL listing
 // before deciding whether to act on a match, not just a two-line
 // summary.
+//
+// TERMINOLOGY, changed same day -- direct feedback: "Match/Matches"
+// translated into Urdu came out as "میچز," a straight transliteration
+// of the English word, not a real Urdu term -- reads as the same word
+// twice, and "match" in this cultural context reads as matchmaking
+// (rishta), an odd association for a BUSINESS marketplace. Renamed to
+// "Opportunities" / "مواقع" (a real, idiomatic Urdu word --
+// "کاروباری مواقع" is genuinely how "business opportunities" gets said)
+// everywhere this screen shows it to a person. match_model,
+// marketplace_matches, find_matches(), etc. all stay exactly as they
+// are -- this is a display-copy change only, not a rename of the
+// underlying concept or any code.
+//
+// The match REASON is now shown bilingually, side by side -- same
+// "alongside" treatment the listing description review already used,
+// not the small inline Urdu tag most short labels get. reasoning.py now
+// asks the ONE Groq call for both languages together (reason_en +
+// reason_ur), not a second call.
 
 export default function MatchResults({ token, listingId, onBack, onSelectListing, onOpenChat }) {
   const [matches, setMatches] = useState(null);
@@ -33,7 +51,7 @@ export default function MatchResults({ token, listingId, onBack, onSelectListing
 
   return (
     <div className="page">
-      <Header subtitle="Your Matches" subtitleUr="آپ کے میچز" />
+      <Header subtitle="Opportunities for You" subtitleUr="آپ کے لیے مواقع" />
 
       {/* Marketplace_Spec.md section 10: this disclaimer must be shown
           at listing creation AND again at introduction, not buried in a
@@ -58,9 +76,9 @@ export default function MatchResults({ token, listingId, onBack, onSelectListing
 
       {matches && matches.length === 0 && (
         <p style={{ color: "var(--color-ink-soft)" }}>
-          No matches yet -- we'll text you the moment someone new joins that fits.
+          No opportunities yet -- we'll text you the moment someone new joins that fits.
           <span className="ur" style={{ display: "block", marginTop: 2 }}>
-            ابھی کوئی میچ نہیں -- جیسے ہی کوئی نیا موزوں شخص شامل ہوگا، ہم آپ کو بتائیں گے۔
+            ابھی کوئی موقع نہیں -- جیسے ہی کوئی موزوں کاروبار شامل ہوگا، ہم آپ کو بتائیں گے۔
           </span>
         </p>
       )}
@@ -89,7 +107,24 @@ export default function MatchResults({ token, listingId, onBack, onSelectListing
                 <span className="tag tag-primary">{m.match_model.replace("_", " ")}</span>
                 <span className="tag tag-accent">{m.proximity_label}</span>
               </div>
-              <div className="match-reason">{m.reason}</div>
+              <div className="bilingual-row" style={{ marginTop: 10 }}>
+                <div className="bilingual-col">
+                  <div className="bilingual-col-label">English</div>
+                  <p className="match-reason" style={{ margin: 0 }}>{m.reason}</p>
+                </div>
+                {m.reason_ur && (
+                  <div className="bilingual-col">
+                    <div className="bilingual-col-label">اردو</div>
+                    <p
+                      className="match-reason"
+                      dir="rtl"
+                      style={{ margin: 0, fontFamily: "var(--font-ur)" }}
+                    >
+                      {m.reason_ur}
+                    </p>
+                  </div>
+                )}
+              </div>
               {m.other_involvements?.length > 0 && (
                 <div className="match-meta" style={{ marginTop: 6 }}>
                   {m.other_involvements.map((inv) => (

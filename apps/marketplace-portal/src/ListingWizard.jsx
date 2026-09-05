@@ -39,6 +39,14 @@ export default function ListingWizard({ token, onDone }) {
   const [step, setStep] = useState(1);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Separate from `busy` -- added 5 Sep 2026, direct feedback: saving a
+  // listing runs match_and_notify() synchronously (find matches, write
+  // an LLM-authored bilingual reason for EACH one, persist, notify) --
+  // genuinely can take a minute or two, and a disabled button saying
+  // "Saving..." reads as frozen/broken for that long. `saving` drives a
+  // dedicated waiting screen (below) explaining what's actually
+  // happening, instead of leaving the form just sitting there disabled.
+  const [saving, setSaving] = useState(false);
 
   const [rawText, setRawText] = useState("");
   const [draft, setDraft] = useState(null);
@@ -132,7 +140,7 @@ export default function ListingWizard({ token, onDone }) {
 
   async function handleSave() {
     setError(null);
-    setBusy(true);
+    setSaving(true);
     try {
       const result = await saveListing(token, {
         role,
@@ -154,11 +162,43 @@ export default function ListingWizard({ token, onDone }) {
         is_women_led: isWomenLed,
       });
       onDone(result.listing_id);
+      // deliberately no setSaving(false) on the success path -- onDone()
+      // navigates away immediately, and leaving `saving` true means this
+      // screen doesn't flash back to the editable form for one frame
+      // before the parent swaps it out.
     } catch (err) {
       setError(err.message);
-    } finally {
-      setBusy(false);
+      setSaving(false);
     }
+  }
+
+  if (saving) {
+    // Dedicated screen, not just a disabled button -- saveListing()
+    // triggers match_and_notify() synchronously (find matches, write an
+    // LLM reason for EACH one, persist, notify), which can genuinely
+    // take a minute or two. Left sitting on a form with a "Saving..."
+    // button for that long reads as frozen, not working.
+    return (
+      <div className="page">
+        <Header subtitle="Create a Listing" subtitleUr="نئی فہرست" />
+        <div className="card" style={{ textAlign: "center", padding: "40px 24px" }}>
+          <div className="stagger" style={{ marginBottom: 20 }}>
+            <div className="skeleton" style={{ height: 14, width: "60%", margin: "0 auto 10px" }} />
+            <div className="skeleton" style={{ height: 14, width: "45%", margin: "0 auto" }} />
+          </div>
+          <h3 className="card-heading" style={{ justifyContent: "center" }}>
+            Finding suitable businesses for you...
+          </h3>
+          <p className="ur" style={{ fontFamily: "var(--font-ur)", fontSize: 17, margin: "4px 0 12px" }}>
+            آپ کے لیے موزوں کاروبار تلاش کیے جا رہے ہیں...
+          </p>
+          <p className="card-subtext" style={{ margin: 0 }}>
+            We're checking your listing against everyone else on the marketplace and writing a
+            plain-language reason for each match -- this can take a minute or two.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -354,8 +394,8 @@ export default function ListingWizard({ token, onDone }) {
             <button className="btn btn-secondary" onClick={() => setStep(1)}>
               Back <span style={{ fontFamily: "var(--font-ur)" }}>پیچھے</span>
             </button>
-            <button className="btn btn-accent" disabled={busy || !role || !anySeekingSelected} onClick={handleSave}>
-              {busy ? "Saving..." : "Confirm & Create Listing"}
+            <button className="btn btn-accent" disabled={!role || !anySeekingSelected} onClick={handleSave}>
+              Confirm & Create Listing
             </button>
           </div>
         </>

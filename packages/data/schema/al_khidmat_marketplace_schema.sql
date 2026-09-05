@@ -481,6 +481,9 @@ create table marketplace_matches (
     proximity_label         text,                 -- 'same cluster' | 'Sukkur -> Hyderabad'
 
     reason                  text,                 -- plain-language, LLM-written for readability
+    reason_ur               text,                 -- same reason, real Urdu -- added 5 Sep 2026,
+                                                    -- direct request to show it alongside English
+                                                    -- the same way product_or_service already does
 
     -- suggested transport for a cross-cluster goods match
     suggested_logistics_id  uuid references store_listings(id),
