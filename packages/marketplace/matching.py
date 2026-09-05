@@ -45,6 +45,46 @@ from proximity import proximity_multiplier
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
+# QUALITY FLOOR -- added 5 Sep 2026, direct request: "we should have a
+# quality floor, it's not like you suggest everybody who is the closest
+# match." Real bug this was hiding: a clay-jewelry maker seeking
+# employment was shown "Fatima Farms" (needs field workers) as a match,
+# reasoned about in a perfectly plausible-sounding sentence -- because
+# find_matches() always returned the top N candidates from whatever
+# passed the filters, even when NONE of them were actually a good fit.
+#
+# WHY MIN_SIMILARITY IS DELIBERATELY LOW (0.25), NOT A CONFIDENT CUTOFF
+# --------------------------------------------------------------------------
+# Checked directly against real data before picking a number, not
+# guessed: genuinely GOOD supply-chain matches from earlier tonight
+# scored as low as 0.284 (a real leather-supplier <-> tailoring match).
+# The farm/jewelry mismatch scored 0.409-0.502 -- HIGHER than that good
+# match. That means raw cosine similarity does NOT cleanly separate
+# "good match" from "bad match" in this embedding space, on this
+# dataset's short, template-heavy descriptions -- a threshold high
+# enough to block the farm match would ALSO block real matches that
+# happen to score lower for unrelated reasons (shorter text, less word
+# overlap). 0.25 is set safely below every genuinely good match measured
+# so far -- it catches only the truly degenerate, near-unrelated tail,
+# not a confident "this separates good from bad" line. See
+# EMPLOYMENT_SAME_CATEGORY_OR_MIN_SIMILARITY below for the fix that
+# actually would have caught the Fatima Farms case specifically.
+MIN_SIMILARITY = 0.25
+
+# EMPLOYMENT-SPECIFIC, STRICTER RULE -- this is the one that actually
+# would have stopped Fatima Farms. For employment specifically (unlike
+# supply_chain, where crossing categories is the WHOLE POINT -- a
+# leather supplier in Manufacturing matching a shoemaker in a different
+# category is exactly how that model is supposed to work), an employer
+# hiring for their own trade overwhelmingly wants someone in that same
+# declared trade_category. That's a cheap, reliable signal this
+# dataset's short descriptions don't reliably encode into the embedding
+# on their own. So: an employment candidate has to EITHER share the same
+# trade_category, OR clear a meaningfully higher similarity bar (0.55 --
+# comfortably above the 0.409-0.502 the farm match scored) to prove the
+# cross-category connection is real despite the category mismatch.
+EMPLOYMENT_STRONG_SIMILARITY = 0.55
+
 
 def _get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
@@ -58,7 +98,7 @@ def _fetch_listing(cur, listing_id: str) -> dict:
                seeking_work, is_remote_capable, output_is_physical,
                will_deliver_outside_area, will_relocate_for_work,
                will_partner_outside_district,
-               cluster_id, district, embedding, active
+               cluster_id, district, embedding, active, trade_category_id
         from store_listings
         where id = %s
         """,
@@ -90,11 +130,13 @@ def _search_supply_chain_suppliers(cur, source: dict, limit: int) -> list[dict]:
           and (output_is_physical = false
                or cluster_id = %(cluster)s
                or will_deliver_outside_area = true)
+          and (embedding <=> %(vec)s) <= %(max_distance_floor)s
         order by embedding <=> %(vec)s
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
-         "cluster": source["cluster_id"], "limit": limit},
+         "cluster": source["cluster_id"], "limit": limit,
+         "max_distance_floor": 1 - MIN_SIMILARITY},
     )
     return [dict(r) | {"match_model": "supply_chain"} for r in cur.fetchall()]
 
@@ -115,19 +157,26 @@ def _search_supply_chain_producers(cur, source: dict, limit: int) -> list[dict]:
           and (%(source_output_physical)s = false
                or cluster_id = %(cluster)s
                or %(source_will_deliver)s = true)
+          and (embedding <=> %(vec)s) <= %(max_distance_floor)s
         order by embedding <=> %(vec)s
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
          "cluster": source["cluster_id"], "limit": limit,
          "source_output_physical": source["output_is_physical"],
-         "source_will_deliver": source.get("will_deliver_outside_area", False)},
+         "source_will_deliver": source.get("will_deliver_outside_area", False),
+         "max_distance_floor": 1 - MIN_SIMILARITY},
     )
     return [dict(r) | {"match_model": "supply_chain"} for r in cur.fetchall()]
 
 
 def _search_employment_workers(cur, source: dict, limit: int) -> list[dict]:
-    """Source seeking_workers=true -> find seeking_work=true candidates."""
+    """
+    Source seeking_workers=true -> find seeking_work=true candidates.
+
+    same_category-or-strong-similarity gate added 5 Sep 2026 -- see
+    EMPLOYMENT_STRONG_SIMILARITY's module-level comment for why.
+    """
     cur.execute(
         """
         select id, primary_beneficiary_id, business_name, product_or_service_en, role,
@@ -142,17 +191,30 @@ def _search_employment_workers(cur, source: dict, limit: int) -> list[dict]:
           and (is_remote_capable = true
                or cluster_id = %(cluster)s
                or will_relocate_for_work = true)
+          and (embedding <=> %(vec)s) <= %(max_distance_floor)s
+          and (trade_category_id = %(source_category)s
+               or (embedding <=> %(vec)s) <= %(max_distance_strong)s)
         order by embedding <=> %(vec)s
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
-         "cluster": source["cluster_id"], "limit": limit},
+         "cluster": source["cluster_id"], "limit": limit,
+         "source_category": source["trade_category_id"],
+         "max_distance_floor": 1 - MIN_SIMILARITY,
+         "max_distance_strong": 1 - EMPLOYMENT_STRONG_SIMILARITY},
     )
     return [dict(r) | {"match_model": "employment"} for r in cur.fetchall()]
 
 
 def _search_employment_businesses(cur, source: dict, limit: int) -> list[dict]:
-    """Source seeking_work=true -> find seeking_workers=true candidates."""
+    """
+    Source seeking_work=true -> find seeking_workers=true candidates.
+
+    same_category-or-strong-similarity gate added 5 Sep 2026 -- this is
+    the direction that actually produced the "Fatima Farms for a
+    clay-jewelry maker" match. See EMPLOYMENT_STRONG_SIMILARITY's
+    module-level comment.
+    """
     cur.execute(
         """
         select id, primary_beneficiary_id, business_name, product_or_service_en, role,
@@ -167,13 +229,19 @@ def _search_employment_businesses(cur, source: dict, limit: int) -> list[dict]:
           and (%(source_remote)s = true
                or cluster_id = %(cluster)s
                or %(source_relocate)s = true)
+          and (embedding <=> %(vec)s) <= %(max_distance_floor)s
+          and (trade_category_id = %(source_category)s
+               or (embedding <=> %(vec)s) <= %(max_distance_strong)s)
         order by embedding <=> %(vec)s
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
          "cluster": source["cluster_id"], "limit": limit,
          "source_remote": source["is_remote_capable"],
-         "source_relocate": source.get("will_relocate_for_work", False)},
+         "source_relocate": source.get("will_relocate_for_work", False),
+         "source_category": source["trade_category_id"],
+         "max_distance_floor": 1 - MIN_SIMILARITY,
+         "max_distance_strong": 1 - EMPLOYMENT_STRONG_SIMILARITY},
     )
     return [dict(r) | {"match_model": "employment"} for r in cur.fetchall()]
 
@@ -194,11 +262,13 @@ def _search_joint_venture(cur, source: dict, limit: int) -> list[dict]:
           and (is_remote_capable = true
                or cluster_id = %(cluster)s
                or will_partner_outside_district = true)
+          and (embedding <=> %(vec)s) <= %(max_distance_floor)s
         order by embedding <=> %(vec)s
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
-         "cluster": source["cluster_id"], "limit": limit},
+         "cluster": source["cluster_id"], "limit": limit,
+         "max_distance_floor": 1 - MIN_SIMILARITY},
     )
     return [dict(r) | {"match_model": "joint_venture"} for r in cur.fetchall()]
 
