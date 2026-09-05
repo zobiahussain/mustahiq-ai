@@ -96,7 +96,15 @@ insert into trade_categories (name) values
     ('Food'),
     ('Three-wheeler / rickshaw'),
     ('Agriculture'),
-    ('Freelancing / technology');
+    ('Freelancing / technology'),
+    ('Handicrafts & Artisan Crafts');  -- added 5 Sep 2026, direct request: pottery, clay
+                                       -- work, jewelry-making, crochet, home decor had no
+                                       -- real home in the original 10 -- confirmed live
+                                       -- with a real case (a clay-jewelry maker got zero
+                                       -- honest matches rather than a forced-fit one).
+                                       -- This table is shared with the eligibility side
+                                       -- (a loan officer picks from it at the loan desk) --
+                                       -- flagged here, not silently assumed to be marketplace-only.
 
 
 -- ============================================================

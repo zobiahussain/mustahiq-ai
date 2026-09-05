@@ -232,6 +232,15 @@ SPECIALTY_SUFFIXES = {
         ("also offers ongoing maintenance support", "مسلسل معاونت بھی فراہم کرتے ہیں"),
         ("focuses on mobile-friendly design", "موبائل دوست ڈیزائن پر توجہ"),
     ],
+    # Added 5 Sep 2026 alongside the new trade_categories row -- direct
+    # request, and the actual case that surfaced the gap: a clay-jewelry
+    # maker had no honest category before this.
+    "Handicrafts & Artisan Crafts": [
+        ("specializes in custom wedding-order pieces", "شادی کے حسبِ ضرورت آرڈرز میں مہارت"),
+        ("known for traditional hand-painted designs", "روایتی ہاتھ سے بنے ڈیزائن کے لیے مشہور"),
+        ("also sells through local exhibitions and stalls", "مقامی نمائشوں اور اسٹالز میں بھی فروخت"),
+        ("focuses on eco-friendly, locally-sourced materials", "ماحول دوست، مقامی مواد پر توجہ"),
+    ],
     "Trading businesses": [
         ("specializes in bulk import orders", "تھوک درآمدی آرڈرز میں مہارت"),
         ("known for a wide range of mixed merchandise", "متنوع سامان کی وسیع رینج کے لیے مشہور"),
@@ -358,6 +367,21 @@ TEMPLATES = {
              ur=["درآمد برآمد کاروبار، شراکت دار چاہیے"],
              remote=False, physical=True, travel="will_partner_outside_district"),
     ],
+    "Handicrafts & Artisan Crafts": [
+        dict(role="producer", seeking={"seeking_inputs": True},
+             en=["Handmade pottery and clay craft production -- decorative and functional pieces, needs raw clay and glazing materials",
+                 "Handmade jewelry making -- beads, clay, and metal accessories, needs craft materials"],
+             ur=["مٹی کے برتن اور دستکاری، خام مال چاہیے", "ہاتھ سے بنی جیولری، سامان چاہیے"],
+             remote=False, physical=True),
+        dict(role="producer", seeking={"seeking_partner": True},
+             en=["Artisan crochet and home decor workshop seeking a partner to expand into new markets"],
+             ur=["دستکاری اور کروشیے کا کام، شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Skilled artisan (pottery, jewelry, or crochet) seeking steady work or commissions"],
+             ur=["ہنر مند کاریگر، کام کی تلاش میں"],
+             remote=False, physical=False),
+    ],
 }
 
 
@@ -377,6 +401,7 @@ BUSINESS_NAME_NOUNS = {
     "Agriculture": ["Farms", "Agri Farms"],
     "Freelancing / technology": ["Studio", "Tech Services", "Digital Works"],
     "Trading businesses": ["Traders", "Trading Co.", "Trading Business"],
+    "Handicrafts & Artisan Crafts": ["Crafts", "Pottery Studio", "Artisan Works"],
 }
 
 

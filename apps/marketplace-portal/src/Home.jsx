@@ -18,7 +18,7 @@ import Header from "./Header.jsx";
 const TRADE_CATEGORIES = [
   "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery", "Livestock",
   "Manufacturing", "Services", "Food", "Three-wheeler / rickshaw", "Agriculture",
-  "Freelancing / technology",
+  "Freelancing / technology", "Handicrafts & Artisan Crafts",
 ];
 
 const ROLES = ["supplier", "producer", "retailer", "service", "logistics"];
