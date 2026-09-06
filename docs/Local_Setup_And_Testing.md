@@ -48,6 +48,15 @@ INTERNAL_API_KEY=...             # gates the webhook endpoints, see section 6
 Every Python file that needs the database or Groq loads this same file — nothing needs a
 second copy anywhere else in the repo.
 
+**`DATABASE_URL` should be Supabase's Session Pooler string, not the direct connection.**
+In the Supabase dashboard: Settings → Database → Connection string → **Session pooler**
+tab (not "Direct connection", and not "Transaction pooler" — that one doesn't suit a
+long-running app like this). Confirmed directly on 6 Sep 2026: the direct/IPv6 host took
+~9.6s just to ESTABLISH a fresh connection on this network; the Session Pooler string
+(IPv4, keeps a warm pool ready) brought that down to 1.5-2.5s. Every script and endpoint
+in this repo reads whatever's in `.env`, so this one line affects the whole app's
+responsiveness, not just one script.
+
 **`marketplace_listing_build_flowchart.png`** (repo root, ~955 KB) — the only OTHER file
 that needs manual copying. Not gitignored, just genuinely never committed (sitting there
 since 1 Sep 2026) — a real gap, confirmed by checking `git status` directly rather than
@@ -82,6 +91,27 @@ The first thing that touches embeddings will download the model (~420MB) from
 huggingface.co on that one run — `embeddings.py` detects an empty cache and allows it,
 then pins itself to the offline cache for every run after. No manual step; just don't be
 offline for the very first embedding call.
+
+### 3.1 Bringing the database up to date — run migrations
+
+The two schema files (`packages/data/schema/*.sql`) build a database from nothing; they
+are not automatically re-applied or diffed against what's actually live. Two cases:
+
+- **A brand-new database** (a fresh Supabase project, nobody's used this `DATABASE_URL`
+  before): run `al_khidmat_core_schema.sql`, then `al_khidmat_marketplace_schema.sql`,
+  against it first (Supabase's SQL editor, or `psql`), THEN run migrations (below) to
+  catch it up to anything added since those files were last written.
+- **This project's existing database** (the one already in your `.env`): the baseline is
+  already there — just run migrations.
+
+```powershell
+cd packages\data
+..\rag\.venv\Scripts\python.exe run_migrations.py
+```
+
+Safe to run anytime, including repeatedly — it tracks what's already applied in a
+`schema_migrations` table and only runs what's new. See `packages/data/migrations/README.md`
+if you want the full "why a migrations folder at all" explanation.
 
 ---
 
@@ -211,7 +241,7 @@ cd packages\data
 
 (Or point it at a different file: `import_test_customers.py my_customers.csv`.)
 
-- `trade_category` — one of the 10 real names (`packages/data/reference_lists.md`), or
+- `trade_category` — one of the 15 real names (`packages/data/reference_lists.md`), or
   leave the cell blank for "not a business."
 - `status` — blank defaults to `approved`.
 - **One bad row (a typo'd category, a duplicate phone) does not stop the others** — every
@@ -230,6 +260,11 @@ With `SKIP_ELIGIBILITY_CHECK=false` and the API server restarted:
 - Status `defaulted` or `rejected` → **rejected at `POST /auth/request-otp`**, no OTP sent
   at all (403, "This number isn't recognised, or isn't yet eligible.").
 - A phone number nobody ever created → same 403, before any OTP send.
+- **Requesting a code for the same number twice in a row (added 6 Sep 2026)** → the
+  second call within 30 seconds returns `{"otp_sent": false, "reason": "cooldown",
+  "retry_after_seconds": N}` instead of a fresh code — not a failure, just the resend
+  cooldown. If you're testing repeatedly against one number, wait out the cooldown or use
+  a different test number.
 
 ---
 
@@ -262,12 +297,15 @@ Both webhooks require the `X-Internal-Key` header — a missing or wrong key get
 
 | Script | Purpose |
 |---|---|
+| `packages/data/run_migrations.py` | Brings the database schema up to date — run this before anything else on a database you haven't used in a while (see §3.1) |
 | `packages/data/generate_seed_data.py` | Bulk realistic seed data (500+ beneficiaries) — additive, never touches existing rows |
+| `packages/data/generate_new_category_seed_data.py` | Targeted top-up: cycles every template variant for a fixed list of categories, guaranteeing both sides of every seeking flag exist — use after adding new templates to `generate_seed_data.py`'s `TEMPLATES`, not as a general-purpose generator |
 | `packages/data/export_seed_data.py` | Dumps the live database to CSV for review in Excel |
 | `packages/data/create_test_customer.py` | One real customer at a time, via CLI args or prompts |
 | `packages/data/import_test_customers.py` | Many real customers at once, from `test_customers_template.csv` |
 | `packages/marketplace/smoke_test_*.py` | Each tests one piece of the module against the live database |
 | `services/api/smoke_test_new_endpoints.py` | Real HTTP tests against a running server |
+| `.github/workflows/ci.yml` | Lint + frontend build run automatically on every push; the full smoke-test suite is manual-trigger only (`workflow_dispatch` on GitHub) — it writes real rows to this same database, see the workflow file's own top comment |
 
 See `docs/Marketplace_Technical_Flow.md` for the code-level trace of what actually
 happens, file by file, for every one of these flows.

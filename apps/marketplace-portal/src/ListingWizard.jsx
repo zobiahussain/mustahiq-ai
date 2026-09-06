@@ -39,13 +39,13 @@ export default function ListingWizard({ token, onDone }) {
   const [step, setStep] = useState(1);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  // Separate from `busy` -- added 5 Sep 2026, direct feedback: saving a
-  // listing runs match_and_notify() synchronously (find matches, write
-  // an LLM-authored bilingual reason for EACH one, persist, notify) --
-  // genuinely can take a minute or two, and a disabled button saying
-  // "Saving..." reads as frozen/broken for that long. `saving` drives a
-  // dedicated waiting screen (below) explaining what's actually
-  // happening, instead of leaving the form just sitting there disabled.
+  // Separate from `busy` -- added 5 Sep 2026 for a genuinely slow save
+  // (match_and_notify() ran inline then, up to a minute or two). Fixed
+  // 6 Sep 2026: match_and_notify() now runs as a BACKGROUND task (see
+  // main.py listing_save()), so POST /listing itself is fast -- `saving`
+  // now just covers that brief real save, and MatchResults.jsx (not this
+  // screen) shows its own "still looking" state while it polls for the
+  // background match results.
   const [saving, setSaving] = useState(false);
 
   const [rawText, setRawText] = useState("");
