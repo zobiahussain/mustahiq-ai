@@ -1,25 +1,46 @@
 """
-Targeted top-up for the 5 categories added later in the session
-(Handicrafts & Artisan Crafts, Construction & Home Trades, Beauty &
-Personal Care, Repair & Maintenance, Education & Tutoring) -- confirmed
-live: real listings existed in some of these (from reclassifying
-"Services"), but adding the new categories to generate_seed_data.py's
-TEMPLATES never actually ran a generation pass, so nobody NEW was ever
-created there. Worse: the 3 listings that existed in Handicrafts (from
-manual reclassification) all happened to be seeking_work -- zero
-seeking_workers counterparts, so employment matching there was
-structurally impossible, not just low-quality. Repair & Maintenance had
-ZERO listings at all.
+Targeted top-up, round 2 -- now covering ALL 15 trade categories, not
+just the 5 added later in the session.
+
+WHY THIS RUN EXISTS: after round 1 (the 45-listing top-up for Handicrafts
+/ Construction / Beauty / Repair / Education), the user asked a broader
+question -- "for each category, what are the three working modes?" --
+which surfaced that the ORIGINAL 10 categories had the exact same
+problem, just less visibly: Manufacturing, Grocery, Food, and Trading
+businesses had zero employment or joint_venture template coverage at
+all, and Three-wheeler/rickshaw had no seeking-flag templates whatsoever
+(a single bare logistics listing, nothing else). Those gaps were in
+generate_seed_data.py's TEMPLATES from day one; a full re-run of that
+generator was never triggered after they'd have been fixed, and even if
+it had been, random sampling at typical per-category volume is exactly
+what silently produced round 1's problem (Handicrafts drawing
+seeking_work three times in a row, never seeking_workers).
+
+So: TEMPLATES now has real coverage for every applicable mode in every
+category (see the "for each category, what are the three working modes"
+conversation -- Freelancing/technology and the base "supplier" role for
+Beauty & Personal Care / Education & Tutoring are the only deliberate
+omissions, since cross-category supply_chain matching already covers a
+tutoring center's book supplier without needing an in-category one).
+This script is that fix's live counterpart: run once across ALL 15
+categories so every newly-added template variant gets a guaranteed real
+counterpart in the database, not just a definition in the file.
 
 WHY THIS DOESN'T JUST RE-RUN generate_seed_data.py
 --------------------------------------------------------------------------
 That would regenerate 500+ MORE beneficiaries across all 15 categories --
-duplicating what's already there. This is a small, targeted top-up:
-new beneficiaries, but ONLY for these 5 categories, and DELIBERATELY
-CYCLING through every template variant at least twice each (not
-randomly sampling, which is exactly what produced the all-seeking_work
-Handicrafts problem at small sample sizes) -- so every seeking flag a
-template defines gets a real counterpart on the other side.
+duplicating what's already there. This is still a targeted top-up: new
+beneficiaries only, and DELIBERATELY CYCLING through every template
+variant a fixed number of times each (not randomly sampling, which is
+exactly what produced the all-seeking_work Handicrafts problem at small
+sample sizes in round 1) -- so every seeking flag a template defines
+gets a real counterpart on the other side, in every category this time,
+not just the 5 that got attention first.
+
+Phone prefix bumped to +9236 (round 1 used +9235) and the random seed to
+45 (round 1 used 44) specifically so this run's rows land in a fresh,
+non-colliding phone-number range and produce a different random draw --
+same reasoning as round 1's own seed bump from 42/43.
 
 Run:
     cd packages/data
@@ -47,15 +68,25 @@ from generate_seed_data import (  # noqa: E402
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 import random
-random.seed(44)  # different from both prior seeds (42, 43) -- a fresh, non-repeating draw
+random.seed(45)  # different from all three prior seeds (42, 43, 44) -- a fresh, non-repeating draw
 
 NEW_CATEGORIES = [
-    "Handicrafts & Artisan Crafts",
-    "Construction & Home Trades",
+    "Tailoring & embroidery",
+    "Grocery / Karyana",
+    "Livestock",
+    "Manufacturing",
+    "Services",
     "Beauty & Personal Care",
+    "Construction & Home Trades",
     "Repair & Maintenance",
     "Education & Tutoring",
-]
+    "Food",
+    "Three-wheeler / rickshaw",
+    "Agriculture",
+    "Freelancing / technology",
+    "Trading businesses",
+    "Handicrafts & Artisan Crafts",
+]  # all 15 -- name kept as NEW_CATEGORIES so the loop below didn't need touching
 
 REPEATS_PER_TEMPLATE = 3  # each template variant gets created this many times,
                           # cycled deterministically -- guarantees every seeking
@@ -85,20 +116,24 @@ def run():
 
     print(f"generating {len(plans)} new beneficiaries/loans/listings across {len(NEW_CATEGORIES)} categories...")
 
-    # +9235 prefix -- distinct from every other block used so far this
+    # +9236 prefix -- distinct from every other block used so far this
     # session (+923001234xxx hand-curated, +9234... bulk generator,
-    # +923007/9... SKIP_ELIGIBILITY_CHECK test rows) -- unambiguous to
-    # spot later.
+    # +9235... round-1 top-up, +923007/9... SKIP_ELIGIBILITY_CHECK test
+    # rows) -- unambiguous to spot later, and avoids a phone-uniqueness
+    # collision with round 1's rows.
     beneficiary_rows = []
     loan_rows = []
     for i, (name, is_male, district, cluster_id, category_name, template, business_name) in enumerate(plans):
         bid = str(uuid.uuid4())
-        phone = f"+9235{2000000 + i:07d}"
+        phone = f"+9236{2000000 + i:07d}"
         beneficiary_rows.append((bid, name, phone, district, cluster_id, True))
 
         lid = str(uuid.uuid4())
         loan_rows.append((
-            lid, f"AK-CAT-{20000 + i}", bid, "Small Business Loan",
+            # AK-CAT2- not AK-CAT- -- round 1 already claimed AK-CAT-20000
+            # upward (loan_reference is unique); this run's numbering would
+            # otherwise collide 1:1 since both scripts start counting at 0.
+            lid, f"AK-CAT2-{20000 + i}", bid, "Small Business Loan",
             category_id_by_name[category_name],
             f"Loan for {category_name}", "disbursed", 150000,
             date.today() - timedelta(days=random.randint(15, 300)),
@@ -185,7 +220,7 @@ def run():
     conn.commit()
     cur.close()
     conn.close()
-    print(f"\nDone. {len(listing_rows)} new listings added across the 5 newer categories, "
+    print(f"\nDone. {len(listing_rows)} new listings added across all {len(NEW_CATEGORIES)} categories, "
           f"with every seeking flag each category defines now having a real counterpart.")
 
 
