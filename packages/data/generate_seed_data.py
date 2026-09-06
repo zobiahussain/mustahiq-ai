@@ -385,6 +385,10 @@ TEMPLATES = {
              en=["Vehicle and motorcycle repair workshop -- servicing, parts replacement"],
              ur=["گاڑی اور موٹرسائیکل مرمت کی ورکشاپ"],
              remote=False, physical=True),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Busy repair workshop hiring an additional technician -- mobile, appliance, or vehicle repair skills"],
+             ur=["مصروف مرمت کی ورکشاپ، اضافی ٹیکنیشن چاہیے"],
+             remote=False, physical=False),
     ],
     "Education & Tutoring": [
         dict(role="service", seeking={"seeking_work": True},
@@ -457,6 +461,10 @@ TEMPLATES = {
              en=["Skilled artisan (pottery, jewelry, or crochet) seeking steady work or commissions"],
              ur=["ہنر مند کاریگر، کام کی تلاش میں"],
              remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_workers": True},
+             en=["Growing handicrafts workshop hiring additional artisans -- pottery, jewelry-making, or crochet skills"],
+             ur=["دستکاری کا بڑھتا ہوا کاروبار، ہنر مند کاریگر چاہیے"],
+             remote=False, physical=True),
     ],
 }
 

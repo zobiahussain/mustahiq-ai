@@ -80,10 +80,22 @@ MIN_SIMILARITY = 0.25
 # declared trade_category. That's a cheap, reliable signal this
 # dataset's short descriptions don't reliably encode into the embedding
 # on their own. So: an employment candidate has to EITHER share the same
-# trade_category, OR clear a meaningfully higher similarity bar (0.55 --
-# comfortably above the 0.409-0.502 the farm match scored) to prove the
-# cross-category connection is real despite the category mismatch.
-EMPLOYMENT_STRONG_SIMILARITY = 0.55
+# trade_category, OR clear a meaningfully higher similarity bar to prove
+# the cross-category connection is real despite the category mismatch.
+#
+# RAISED 0.55 -> 0.70, 6 Sep 2026 -- 0.55 was set from ONE data point
+# (Fatima Farms, 0.409-0.502) and flagged explicitly as an open
+# calibration question at the time, not a confident line. Two more real
+# examples landed since, independently: an electrician matched to
+# graphic-design studios (0.57-0.61), and a pottery studio matched to a
+# beauty parlor and a repair shop (0.557-0.560) -- neither pairing holds
+# up, and both cleared 0.55 comfortably. Three real "this shouldn't have
+# passed" examples, all clustered in the same 0.55-0.61 band, is a
+# pattern, not noise -- raised well above it. Still not treated as
+# solved forever: if a genuinely good CROSS-category employment match
+# ever gets blocked by this, that's real evidence 0.70 is too strict,
+# the same way these three were evidence 0.55 was too loose.
+EMPLOYMENT_STRONG_SIMILARITY = 0.70
 
 
 def _get_conn():
