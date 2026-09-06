@@ -1,0 +1,135 @@
+name: CI
+
+# WHAT RUNS AUTOMATICALLY VS. ON PURPOSE ONLY -- READ BEFORE ADDING A JOB
+# --------------------------------------------------------------------------
+# "lint" and "frontend-build" run on every push and PR -- they're fast,
+# need no secrets, and catch real classes of bugs for free (see their
+# own comments below for a real example each one would have caught).
+#
+# "smoke-tests" is workflow_dispatch (manual) ONLY, deliberately NOT wired
+# to push/PR -- see that job's own comment for exactly why. Short version:
+# this project has one Supabase database, not a separate throwaway one for
+# CI, and the smoke tests genuinely INSERT rows into it (test beneficiaries,
+# listings, matches) and call the real Groq API. Running that automatically
+# on every push would (a) write test data into the same database the demo
+# uses, and (b) burn Groq's per-minute free-tier rate limit -- already
+# flagged in CLAUDE.md as one of the two biggest demo-day risks -- on
+# every single push across a 5-person team, not just when someone
+# deliberately wants to check. Fix properly later: a separate Supabase
+# project just for CI. Until then, a human decides when this runs.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff
+        run: pip install ruff
+      # ruff's pyflakes rules (F821 undefined name, F401 unused import,
+      # plus real syntax errors) catch a REAL class of bug this project
+      # hit by hand at least twice this session: a raw psycopg2 call added
+      # to services/api/main.py without importing psycopg2 (caught by
+      # eye, only because someone happened to read the diagnostics --
+      # ruff would have failed the build instead), and PEP 649's deferred
+      # annotation evaluation silently misrouting a FastAPI body param
+      # (a NameError ruff's F821 check would also have surfaced, instead
+      # of it silently misbehaving at request time). Not a style
+      # preference -- these are real bugs this exact codebase produced.
+      # Python files only -- packages/ and services/ are this project's
+      # Python code; the apps/ folders are React/JSX (a separate build
+      # check, see frontend-build below), not something a Python linter
+      # has any business scanning.
+      - name: Run ruff (undefined names, unused imports, syntax errors)
+        run: ruff check --select F,E9 packages/ services/ 2>&1 || true
+        # `|| true` for now: this is CI's FIRST run against a codebase
+        # that's never been linted before, so it may well flag pre-existing
+        # findings that need a deliberate pass to clean up, not a build
+        # that should go red on day one for things nobody's looked at yet.
+        # Remove `|| true` once that pass happens, so new findings actually
+        # block a merge -- tracked, not silently permanent.
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/marketplace-portal/package-lock.json
+      - name: Install dependencies
+        working-directory: apps/marketplace-portal
+        run: npm ci
+      # A build failure here means broken JSX or a bad import made it into
+      # a commit -- exactly the kind of thing a fast, free check should
+      # catch before it reaches a real device during a demo.
+      - name: Build
+        working-directory: apps/marketplace-portal
+        run: npm run build
+
+  smoke-tests:
+    # See the file-level comment above -- manual only, on purpose.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      HF_HUB_OFFLINE: "0"  # first run on a fresh runner has no cache -- see cache step below
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Skip the whole job cleanly with a clear message if the repo secrets
+      # aren't configured yet, rather than every step failing with a
+      # confusing connection error. Remove this guard once DATABASE_URL and
+      # GROQ_API_KEY are added under repo Settings -> Secrets and variables.
+      - name: Check required secrets are configured
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::DATABASE_URL and/or GROQ_API_KEY repo secrets are not set -- skipping smoke tests. See this workflow file's top comment."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Cache the embedding model
+        if: env.SKIP != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          # BAAI/bge-base-en-v1.5 is ~420MB -- downloading it fresh on
+          # every run would make this job needlessly slow. Cache key never
+          # changes (the model name is fixed in packages/rag/embeddings.py),
+          # so this is a one-time download per runner generation.
+          key: hf-bge-base-en-v1.5
+
+      - name: Install dependencies
+        if: env.SKIP != 'true'
+        run: |
+          pip install -r packages/rag/requirements.txt
+          pip install -r services/api/requirements.txt
+
+      - name: Run marketplace smoke tests
+        if: env.SKIP != 'true'
+        working-directory: packages/marketplace
+        run: |
+          for f in smoke_test_*.py; do
+            echo "::group::$f"
+            python "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Run RAG smoke tests
+        if: env.SKIP != 'true'
+        working-directory: packages/rag
+        run: |
+          python smoke_test.py
+          python smoke_test_groq.py
