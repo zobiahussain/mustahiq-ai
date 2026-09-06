@@ -173,11 +173,14 @@ export default function ListingWizard({ token, onDone }) {
   }
 
   if (saving) {
-    // Dedicated screen, not just a disabled button -- saveListing()
-    // triggers match_and_notify() synchronously (find matches, write an
-    // LLM reason for EACH one, persist, notify), which can genuinely
-    // take a minute or two. Left sitting on a form with a "Saving..."
-    // button for that long reads as frozen, not working.
+    // Dedicated screen, not just a disabled button -- still worth a real
+    // screen even though this is fast now (typically a couple of seconds:
+    // one DB write, one embedding call), not frozen-for-a-minute like
+    // before. See main.py listing_save()'s docstring, 6 Sep 2026 --
+    // match_and_notify() (the slow part: one Groq call PER candidate
+    // match) now runs as a BACKGROUND task, AFTER this screen has already
+    // handed off to MatchResults, which shows its OWN "still looking"
+    // state while it polls -- see MatchResults.jsx.
     return (
       <div className="page">
         <Header subtitle="Create a Listing" subtitleUr="نئی فہرست" />
@@ -187,14 +190,10 @@ export default function ListingWizard({ token, onDone }) {
             <div className="skeleton" style={{ height: 14, width: "45%", margin: "0 auto" }} />
           </div>
           <h3 className="card-heading" style={{ justifyContent: "center" }}>
-            Finding suitable businesses for you...
+            Saving your listing...
           </h3>
           <p className="ur" style={{ fontFamily: "var(--font-ur)", fontSize: 17, margin: "4px 0 12px" }}>
-            آپ کے لیے موزوں کاروبار تلاش کیے جا رہے ہیں...
-          </p>
-          <p className="card-subtext" style={{ margin: 0 }}>
-            We're checking your listing against everyone else on the marketplace and writing a
-            plain-language reason for each match -- this can take a minute or two.
+            آپ کی فہرست محفوظ کی جا رہی ہے...
           </p>
         </div>
       </div>

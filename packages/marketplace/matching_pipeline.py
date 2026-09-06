@@ -42,6 +42,27 @@ from logistics import find_logistics_for_route
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
+def _mark_matches_computed(listing_id: str) -> None:
+    """
+    migrations/0001_matches_computed_at.sql -- flips the "still pending"
+    signal off for this listing, whatever the outcome (found several
+    matches, found none, or errored out partway -- see match_and_notify()'s
+    try/finally). Frontend polling has to stop eventually either way; a
+    listing stuck showing "finding matches..." forever because ONE Groq
+    call in the middle failed would be worse than showing a (possibly
+    incomplete) real result.
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute(
+        "update store_listings set matches_computed_at = now() where id = %s",
+        (listing_id,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
     """
     Call this whenever a listing is created (and, once editing exists,
@@ -49,6 +70,22 @@ def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
     matches with reasons attached, same shape find_matches()+add_reasons()
     already returned, so callers that just want to DISPLAY matches (the
     API's GET /listing/{id}/matches) don't need to change.
+
+    RUNS IN THE BACKGROUND NOW, NOT INLINE IN THE REQUEST -- 6 SEP 2026
+    --------------------------------------------------------------------------
+    This is the slow part of listing creation: find_matches() itself is
+    fast (one indexed vector query per direction), but add_reasons() makes
+    ONE GROQ CALL PER MATCH to write a plain-language reason -- eight
+    matches means eight sequential LLM calls before this function even
+    gets to persisting or notifying anyone. Running that inline, inside
+    POST /listing's request/response cycle, is exactly why saving a
+    listing could take a minute or two with nothing to show for it in the
+    meantime. services/api/main.py's listing_save() now schedules THIS
+    function as a FastAPI BackgroundTask instead: the HTTP response
+    returns the moment save_listing() finishes (fast -- one embedding
+    call, one insert), and this runs afterwards, off the request. See
+    _mark_matches_computed() above for how the frontend knows when it's
+    actually done.
     """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -56,9 +93,16 @@ def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
     cur.close()
     conn.close()
 
-    matches = find_matches(listing_id, limit)
-    matches = add_reasons(source, matches)
-    persisted = persist_matches(listing_id, matches)
+    try:
+        matches = find_matches(listing_id, limit)
+        matches = add_reasons(source, matches)
+        persisted = persist_matches(listing_id, matches)
+    except Exception:
+        # Still flip the signal even on a hard failure (e.g. Groq rate-limited
+        # mid-run) -- see _mark_matches_computed()'s docstring -- then let the
+        # real exception propagate/log normally rather than swallowing it.
+        _mark_matches_computed(listing_id)
+        raise
 
     for match, saved in zip(matches, persisted):
         if not saved["is_new"]:
@@ -124,4 +168,5 @@ def match_and_notify(listing_id: str, limit: int = 10) -> list[dict]:
                 f"New match: {source.get('business_name') or 'a business'} -- {match['reason']}",
             )
 
+    _mark_matches_computed(listing_id)
     return matches

@@ -205,6 +205,26 @@ def get_stored_matches(listing_id: str) -> list[dict]:
     return results
 
 
+def is_matches_pending(listing_id: str) -> bool | None:
+    """
+    migrations/0001_matches_computed_at.sql -- True while match_and_notify()'s
+    background task (services/api/main.py listing_save()) hasn't finished
+    for this listing yet, False once it has, None if the listing doesn't
+    exist at all (caller's job to turn that into a 404).
+    """
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute(
+        "select matches_computed_at from store_listings where id = %s", (listing_id,)
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row is None:
+        return None
+    return row[0] is None
+
+
 def dismiss_match(match_id: str, dismissing_listing_id: str) -> None:
     """
     Marketplace_Spec.md section 7: "Either side may dismiss a match, and
