@@ -1,13 +1,45 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_staff
 from app.core.db import get_db
-from app.schemas.beneficiary import BeneficiaryCreate, BeneficiaryResponse
+from app.schemas.beneficiary import BeneficiaryCreate, BeneficiaryDetail, BeneficiaryResponse
 from app.services.duplicate_detection import check_duplicates
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
+
+
+@router.get("/", response_model=list[BeneficiaryDetail])
+def list_beneficiaries(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+):
+    rows = db.execute(
+        text("select * from beneficiary_profiles order by created_at desc limit :limit offset :offset"),
+        {"limit": limit, "offset": offset},
+    ).fetchall()
+
+    return [dict(row._mapping) for row in rows]
+
+
+@router.get("/{beneficiary_id}", response_model=BeneficiaryDetail)
+def get_beneficiary(
+    beneficiary_id: str,
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+):
+    row = db.execute(
+        text("select * from beneficiary_profiles where id = :id"),
+        {"id": beneficiary_id},
+    ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Beneficiary not found")
+
+    return dict(row._mapping)
 
 
 @router.post("/", response_model=BeneficiaryResponse)
