@@ -97,6 +97,26 @@ MIN_SIMILARITY = 0.25
 # the same way these three were evidence 0.55 was too loose.
 EMPLOYMENT_STRONG_SIMILARITY = 0.70
 
+# `, id` ADDED TO EVERY `order by embedding <=> %(vec)s` BELOW -- 6 SEP 2026
+# --------------------------------------------------------------------------
+# smoke_test_persist.py started failing intermittently -- NOT from any
+# logic bug, but because `order by embedding <=> %(vec)s` alone has no
+# guaranteed order among rows that TIE on distance. That was harmless
+# earlier, when the seed data was small and mostly hand-written, so exact
+# ties were rare. It stopped being harmless once generate_seed_data.py and
+# the category top-ups added hundreds of listings from a small pool of
+# TEMPLATE strings -- many rows now share the exact same description text,
+# and therefore the exact same embedding vector, and therefore an EXACT
+# tie in cosine distance against any query. Postgres does not promise
+# which of several exactly-tied rows comes first without an explicit
+# tiebreaker, so two calls to the SAME query, on UNCHANGED data, could
+# return different top-N sets -- which is exactly what surfaced as a match
+# that looked "new" on a second run of persist_matches() for a pair that
+# hadn't actually changed. Appending `, id` (any stable, unique column
+# works) makes the ordering deterministic: ties are broken the same way
+# every time, so the same query on the same data always returns the same
+# top-N, every time it runs.
+
 
 def _get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
@@ -143,7 +163,7 @@ def _search_supply_chain_suppliers(cur, source: dict, limit: int) -> list[dict]:
                or cluster_id = %(cluster)s
                or will_deliver_outside_area = true)
           and (embedding <=> %(vec)s) <= %(max_distance_floor)s
-        order by embedding <=> %(vec)s
+        order by embedding <=> %(vec)s, id
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
@@ -170,7 +190,7 @@ def _search_supply_chain_producers(cur, source: dict, limit: int) -> list[dict]:
                or cluster_id = %(cluster)s
                or %(source_will_deliver)s = true)
           and (embedding <=> %(vec)s) <= %(max_distance_floor)s
-        order by embedding <=> %(vec)s
+        order by embedding <=> %(vec)s, id
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
@@ -206,7 +226,7 @@ def _search_employment_workers(cur, source: dict, limit: int) -> list[dict]:
           and (embedding <=> %(vec)s) <= %(max_distance_floor)s
           and (trade_category_id = %(source_category)s
                or (embedding <=> %(vec)s) <= %(max_distance_strong)s)
-        order by embedding <=> %(vec)s
+        order by embedding <=> %(vec)s, id
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
@@ -244,7 +264,7 @@ def _search_employment_businesses(cur, source: dict, limit: int) -> list[dict]:
           and (embedding <=> %(vec)s) <= %(max_distance_floor)s
           and (trade_category_id = %(source_category)s
                or (embedding <=> %(vec)s) <= %(max_distance_strong)s)
-        order by embedding <=> %(vec)s
+        order by embedding <=> %(vec)s, id
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
@@ -275,7 +295,7 @@ def _search_joint_venture(cur, source: dict, limit: int) -> list[dict]:
                or cluster_id = %(cluster)s
                or will_partner_outside_district = true)
           and (embedding <=> %(vec)s) <= %(max_distance_floor)s
-        order by embedding <=> %(vec)s
+        order by embedding <=> %(vec)s, id
         limit %(limit)s
         """,
         {"vec": source["embedding"], "source_id": source["id"],
