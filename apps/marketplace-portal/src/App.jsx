@@ -38,11 +38,23 @@ export default function App() {
     setError(null);
     setBusy(true);
     try {
-      await requestOtp(phone, {
+      const result = await requestOtp(phone, {
         full_name: testFullName || undefined,
         district: testDistrict || undefined,
         trade_category: testTradeCategory || undefined,
       });
+      // auth.py's resend-cooldown (6 Sep 2026): otp_sent=false here means
+      // a code for this number went out too recently -- NOT an error
+      // (eligibility already passed), so this stays on the phone step
+      // with a plain countdown rather than advancing to a code box that
+      // has nothing new to check against.
+      if (result.otp_sent === false && result.reason === "cooldown") {
+        setError(
+          `A code was already sent -- wait ${result.retry_after_seconds}s before requesting another. `
+          + `پہلے سے کوڈ بھیجا جا چکا ہے -- ${result.retry_after_seconds} سیکنڈ انتظار کریں۔`
+        );
+        return;
+      }
       setStep("code");
     } catch (err) {
       setError(err.message);

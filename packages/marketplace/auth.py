@@ -90,6 +90,18 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 MAX_OTP_ATTEMPTS = 5
 OTP_LENGTH = 6
 
+# Cooldown between two OTP SENDS for the SAME phone number -- different
+# problem from MAX_OTP_ATTEMPTS above (that limits guesses against ONE
+# already-sent code). Added 6 Sep 2026: there was no limit at all on how
+# often request_otp() itself could be called, which is fine right now only
+# because _send_sms() just prints instead of actually sending -- the moment
+# a real provider is wired in (see this file's own "ONE HONEST GAP" note),
+# an unthrottled endpoint is a way for anyone who knows (or guesses) a
+# phone number to run up a real SMS bill by hammering it, with no code
+# ever needing to be correct. 30s is generous for a real user (a code
+# takes seconds to arrive) and cheap protection either way.
+OTP_RESEND_COOLDOWN_SECONDS = 30
+
 SKIP_ELIGIBILITY_CHECK = os.environ.get("SKIP_ELIGIBILITY_CHECK", "false").lower() == "true"
 
 
@@ -235,6 +247,31 @@ def request_otp(
         return {"eligible": False, "reason": "not_found", "otp_sent": False}
 
     beneficiary_id, trade_category_id, status = row
+
+    # Cooldown check -- see OTP_RESEND_COOLDOWN_SECONDS above. A plain read
+    # of the most recent send for this phone, regardless of whether it was
+    # ever verified or has since expired; "how long ago did we last send
+    # ANYTHING to this number" is the only question that matters here.
+    cur.execute(
+        "select created_at from login_otps where phone = %s "
+        "order by created_at desc limit 1",
+        (phone,),
+    )
+    last_sent_row = cur.fetchone()
+    if last_sent_row is not None:
+        cur.execute(
+            "select extract(epoch from (now() - %s))", (last_sent_row[0],)
+        )
+        seconds_since = cur.fetchone()[0]
+        if seconds_since < OTP_RESEND_COOLDOWN_SECONDS:
+            cur.close()
+            conn.close()
+            return {
+                "eligible": True,
+                "otp_sent": False,
+                "reason": "cooldown",
+                "retry_after_seconds": round(OTP_RESEND_COOLDOWN_SECONDS - seconds_since),
+            }
 
     code = "".join(secrets.choice("0123456789") for _ in range(OTP_LENGTH))
     cur.execute(
