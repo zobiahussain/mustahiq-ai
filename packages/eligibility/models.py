@@ -106,6 +106,9 @@ class BeneficiaryProfile(BaseModel):
     owns_home: StrictBool | None = None
     district: StrictStr | None = None
     city: StrictStr | None = None
+    cluster_id: StrictStr | None = None  # marketplace's field, not an eligibility
+                                          # signal -- present only so a full profile
+                                          # row doesn't fail extra="forbid" validation.
     education_level: StrictStr | None = None
     has_disability: StrictBool | None = None
     chronic_illness_flag: StrictBool | None = None
