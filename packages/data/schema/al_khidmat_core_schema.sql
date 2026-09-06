@@ -482,6 +482,12 @@ create table duplicate_flags (
 create index on duplicate_flags (status);
 
 
+
+
+alter table staff_users
+    add column auth_user_id uuid references auth.users(id) unique;
+
+    
 -- ============================================================
 -- REFERENCE QUERIES
 -- ============================================================

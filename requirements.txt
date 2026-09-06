@@ -1,2 +1,8 @@
 python-dotenv
 psycopg2-binary
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic-settings
+httpx
+rapidfuzz
