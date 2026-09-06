@@ -41,16 +41,30 @@ Business A ({role_a}): {desc_a}
 Business B ({role_b}): {desc_b}
 Distance between them: {proximity_label}
 
-Return JSON: {{"reason": "one plain sentence"}}
+Write it in English, then translate that SAME sentence into real,
+natural Urdu (not a transliteration of the English words) -- both shown
+to the beneficiary side by side, the same way the listing description
+already is.
+
+Return JSON: {{"reason_en": "one plain sentence in English",
+               "reason_ur": "the same sentence, in real Urdu"}}
 """
 
 
-def generate_match_reason(source: dict, match: dict) -> str:
+def generate_match_reason(source: dict, match: dict) -> dict:
     """
     source: the listing find_matches() was called for (needs
             product_or_service_en and role).
     match: one item from find_matches()'s returned list (needs
            product_or_service_en, role, match_model, proximity_label).
+
+    Returns {"reason_en": ..., "reason_ur": ...} -- added 5 Sep 2026,
+    direct request to show the match reason bilingually, side by side,
+    the same "alongside" treatment the listing description review
+    already gets, not the small inline Urdu tag used for short UI
+    labels elsewhere. ONE Groq call still produces both languages
+    together (not two separate calls) -- same rate-limit-conscious
+    reasoning as everywhere else in this module.
     """
     result = chat_json(
         PROMPT_TEMPLATE.format(
@@ -62,11 +76,17 @@ def generate_match_reason(source: dict, match: dict) -> str:
             proximity_label=match["proximity_label"],
         )
     )
-    return result["reason"]
+    return {"reason_en": result["reason_en"], "reason_ur": result["reason_ur"]}
 
 
 def add_reasons(source: dict, matches: list[dict]) -> list[dict]:
-    """Mutates and returns matches, adding a 'reason' key to each."""
+    """
+    Mutates and returns matches, adding 'reason' (English -- kept as
+    this exact key so nothing already reading match['reason'] breaks)
+    and 'reason_ur' (real Urdu, shown alongside it).
+    """
     for m in matches:
-        m["reason"] = generate_match_reason(source, m)
+        pair = generate_match_reason(source, m)
+        m["reason"] = pair["reason_en"]
+        m["reason_ur"] = pair["reason_ur"]
     return matches

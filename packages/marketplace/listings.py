@@ -126,10 +126,15 @@ def get_listing_detail(listing_id: str, viewer_beneficiary_id: str | None = None
         )
         is_owner = cur.fetchone() is not None
 
+    detail["is_owner"] = is_owner
+    # conn=conn (not left to open their own) -- these two used to each
+    # open a fresh connection, meaning ONE page load paid the ~seconds-
+    # per-connect tax THREE times over. Fixed 5 Sep 2026, caught directly
+    # from "it's taking so long to open." See photos.py:list_photos()'s
+    # docstring for the same fix's full reasoning.
+    detail["other_involvements"] = get_other_involvements(listing_id, conn=conn)
+    detail["photos"] = list_photos(listing_id, conn=conn)
+
     cur.close()
     conn.close()
-
-    detail["is_owner"] = is_owner
-    detail["other_involvements"] = get_other_involvements(listing_id)
-    detail["photos"] = list_photos(listing_id)
     return detail

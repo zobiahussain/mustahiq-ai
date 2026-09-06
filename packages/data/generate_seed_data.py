@@ -161,13 +161,124 @@ STATUS_WEIGHTS = [
     ("rejected", 6), ("liberation", 8),  # "liberation" = disbursed, no category
 ]
 
+# SPECIALTY SUFFIXES -- added 5 Sep 2026, direct feedback ("multiple
+# businesses have the same [description]"). Measured directly: 352
+# generated listings, only 46 distinct description texts -- with that
+# few templates spread across ~350 listings, most of a category shares
+# byte-identical text, which means byte-identical embeddings, which
+# makes semantic search trivially "perfect" within a category and
+# genuinely untestable (nothing to actually differentiate on). Rather
+# than hand-writing dozens of full alternate templates (a much bigger
+# authoring job) or an LLM call per listing (real Groq rate-limit risk
+# at this volume, per CLAUDE.md's own risk list), each generated
+# description gets a random per-category "specialty" phrase appended --
+# multiplies (base templates) x (specialty suffixes) worth of distinct
+# text combinations from a much smaller amount of new content, and a
+# real trailing phrase changes the embedding, unlike padding with
+# meaningless filler would.
+SPECIALTY_SUFFIXES = {
+    "Tailoring & embroidery": [
+        ("specializing in bridal wear and formal suits", "شادی اور رسمی لباس میں مہارت"),
+        ("known for quick turnaround on school uniforms", "یونیفارم جلدی تیار کرنے میں مشہور"),
+        ("with a focus on hand embroidery work", "ہاتھ کی کڑھائی پر خاص توجہ"),
+        ("serving both men's and women's clothing", "مردوں اور خواتین دونوں کے کپڑے"),
+        ("also does alterations and repairs", "کپڑوں کی مرمت بھی کرتے ہیں"),
+    ],
+    "Grocery / Karyana": [
+        ("known for competitive wholesale rates", "مسابقتی تھوک نرخوں کے لیے مشہور"),
+        ("carries imported as well as local brands", "درآمدی اور مقامی برانڈز دونوں دستیاب"),
+        ("open long hours, serves the whole neighbourhood", "لمبے اوقات کار، پورا محلہ خدمت میں"),
+        ("also stocks household cleaning supplies", "صفائی کا سامان بھی رکھتے ہیں"),
+    ],
+    "Livestock": [
+        ("specializes in goats for Eid season", "عید کے لیے بکروں میں مہارت"),
+        ("known for healthy, well-fed cattle", "صحت مند مویشیوں کے لیے مشہور"),
+        ("also sells fresh milk daily", "روزانہ تازہ دودھ بھی فروخت"),
+        ("focuses on breeding and rearing", "افزائش اور پرورش پر توجہ"),
+    ],
+    "Manufacturing": [
+        ("specializes in export-quality finishing", "برآمدی معیار کی فنشنگ میں مہارت"),
+        ("known for durable, heavy-duty goods", "پائیدار اور مضبوط سامان کے لیے مشہور"),
+        ("handles both small and bulk orders", "چھوٹے اور بڑے دونوں آرڈر لیتے ہیں"),
+        ("focuses on custom-made pieces", "حسب ضرورت سامان بناتے ہیں"),
+    ],
+    "Services": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Beauty & Personal Care": [
+        ("specializes in bridal packages", "دلہن کے پیکجز میں مہارت"),
+        ("known for using quality, gentle products", "معیاری اور نرم مصنوعات کے لیے مشہور"),
+        ("also offers home-visit appointments", "گھر پر بھی خدمات فراہم کرتے ہیں"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Construction & Home Trades": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
+        ("specializes in emergency call-outs", "ہنگامی کالز میں مہارت"),
+        ("offers a warranty on all work", "تمام کام پر ضمانت دیتے ہیں"),
+        ("serves both homes and businesses", "گھروں اور کاروبار دونوں کی خدمت"),
+    ],
+    "Repair & Maintenance": [
+        ("known for same-day service", "اسی دن کام مکمل کرنے میں مشہور"),
+        ("offers a warranty on all work", "تمام کام پر ضمانت دیتے ہیں"),
+        ("also does on-site repairs", "موقع پر بھی مرمت کرتے ہیں"),
+    ],
+    "Education & Tutoring": [
+        ("specializes in exam preparation", "امتحان کی تیاری میں مہارت"),
+        ("known for individualized lesson plans", "انفرادی نصاب کے لیے مشہور"),
+        ("also offers group class discounts", "گروپ کلاسز پر رعایت بھی دیتے ہیں"),
+    ],
+    "Food": [
+        ("known for fresh-baked goods every morning", "روزانہ صبح تازہ بیکری کے لیے مشہور"),
+        ("specializes in wedding and event orders", "شادی اور تقریبات کے آرڈر میں مہارت"),
+        ("also does bulk catering for offices", "دفاتر کے لیے تھوک کیٹرنگ بھی"),
+        ("focuses on traditional home-style recipes", "روایتی گھریلو ذائقے پر توجہ"),
+    ],
+    "Three-wheeler / rickshaw": [
+        ("covers long-distance intercity routes", "طویل فاصلے کے بین شہری روٹس"),
+        ("specializes in same-day small goods delivery", "اسی دن سامان کی ترسیل میں مہارت"),
+        ("known for reliable, on-time service", "قابل اعتماد اور وقت کی پابندی کے لیے مشہور"),
+        ("also available for passenger trips", "مسافروں کے لیے بھی دستیاب"),
+    ],
+    "Agriculture": [
+        ("specializes in seasonal wheat and rice", "موسمی گندم اور چاول میں مہارت"),
+        ("known for organic farming methods", "نامیاتی کاشتکاری کے طریقوں کے لیے مشہور"),
+        ("also supplies to local mandis directly", "مقامی منڈیوں کو براہ راست سپلائی بھی"),
+        ("focuses on high-yield seasonal crops", "زیادہ پیداوار والی موسمی فصلوں پر توجہ"),
+    ],
+    "Freelancing / technology": [
+        ("specializes in e-commerce websites", "ای کامرس ویب سائٹس میں مہارت"),
+        ("known for fast turnaround on small projects", "چھوٹے منصوبوں پر تیز کام کے لیے مشہور"),
+        ("also offers ongoing maintenance support", "مسلسل معاونت بھی فراہم کرتے ہیں"),
+        ("focuses on mobile-friendly design", "موبائل دوست ڈیزائن پر توجہ"),
+    ],
+    # Added 5 Sep 2026 alongside the new trade_categories row -- direct
+    # request, and the actual case that surfaced the gap: a clay-jewelry
+    # maker had no honest category before this.
+    "Handicrafts & Artisan Crafts": [
+        ("specializes in custom wedding-order pieces", "شادی کے حسبِ ضرورت آرڈرز میں مہارت"),
+        ("known for traditional hand-painted designs", "روایتی ہاتھ سے بنے ڈیزائن کے لیے مشہور"),
+        ("also sells through local exhibitions and stalls", "مقامی نمائشوں اور اسٹالز میں بھی فروخت"),
+        ("focuses on eco-friendly, locally-sourced materials", "ماحول دوست، مقامی مواد پر توجہ"),
+    ],
+    "Trading businesses": [
+        ("specializes in bulk import orders", "تھوک درآمدی آرڈرز میں مہارت"),
+        ("known for a wide range of mixed merchandise", "متنوع سامان کی وسیع رینج کے لیے مشہور"),
+        ("also handles export documentation", "برآمدی دستاویزات بھی سنبھالتے ہیں"),
+        ("focuses on household and daily-use goods", "گھریلو اور روزمرہ استعمال کے سامان پر توجہ"),
+    ],
+}
+
+
 # ---------------------------------------------------------------------------
 # Per-trade-category templates. Each entry: role, which seeking flag(s)
 # it sets, a few EN phrasings (picked at random per listing for lexical
 # variety -- 500 identical-text listings in one category would make
 # search/matching trivially easy, not a realistic test), a matching Urdu
 # original, and the two travel/distance gates. Multiple template variants
-# per category so a category isn't just "one business, repeated."
+# per category so a category isn't just "one business, repeated." See
+# SPECIALTY_SUFFIXES above for the second layer of diversity on top of
+# these.
 # ---------------------------------------------------------------------------
 
 TEMPLATES = {
@@ -177,6 +288,10 @@ TEMPLATES = {
                  "Embroidery and tailoring workshop -- bridal wear, uniforms, everyday clothing"],
              ur=["سلائی کا کام، یونیفارم اور کپڑے", "کڑھائی اور سلائی، شادی اور روزمرہ لباس"],
              remote=False, physical=True),
+        dict(role="supplier", seeking={},
+             en=["Fabric and tailoring-supplies wholesaler -- cloth, thread, buttons, trims for tailors and boutiques"],
+             ur=["کپڑا اور سلائی کا سامان تھوک میں فراہم کرتا ہوں"],
+             remote=False, physical=True, travel="will_deliver_outside_area"),
         dict(role="producer", seeking={"seeking_partner": True},
              en=["Tailoring business seeking a partner to expand into bridal wear"],
              ur=["سلائی کا کاروبار، شراکت دار چاہیے"],
@@ -185,6 +300,10 @@ TEMPLATES = {
              en=["Skilled tailor seeking steady work -- shirts, trousers, alterations"],
              ur=["ماہر درزی، کام کی تلاش میں"],
              remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_workers": True},
+             en=["Growing tailoring workshop hiring additional stitching staff"],
+             ur=["سلائی کا بڑھتا ہوا کاروبار، درزی چاہیے"],
+             remote=False, physical=True),
     ],
     "Grocery / Karyana": [
         dict(role="retailer", seeking={"seeking_inputs": True},
@@ -196,6 +315,18 @@ TEMPLATES = {
              en=["Wholesale grocery supplier -- staple foods and household goods, bulk supply to retail shops"],
              ur=["کریانہ کا سامان تھوک میں فراہم کرتا ہوں"],
              remote=False, physical=True, travel="will_deliver_outside_area"),
+        dict(role="retailer", seeking={"seeking_workers": True},
+             en=["Busy karyana store hiring a cashier and stock help"],
+             ur=["کریانہ کی دکان، کیشیئر چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced store clerk seeking work -- cashier, stock, customer service"],
+             ur=["تجربہ کار دکاندار، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="retailer", seeking={"seeking_partner": True},
+             en=["Grocery store seeking a partner to open a second branch"],
+             ur=["کریانہ کی دکان، دوسری شاخ کے لیے شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
     ],
     "Livestock": [
         dict(role="producer", seeking={"seeking_workers": True},
@@ -206,6 +337,18 @@ TEMPLATES = {
              en=["Dairy and wool products supplier -- milk, wool, livestock byproducts"],
              ur=["دودھ اور اون کی فراہمی"],
              remote=False, physical=True, travel="will_deliver_outside_area"),
+        dict(role="producer", seeking={"seeking_inputs": True},
+             en=["Livestock farm needing feed, fodder, and veterinary supplies"],
+             ur=["مویشیوں کے لیے چارہ اور ادویات چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced livestock handler seeking work -- feeding, milking, herd care"],
+             ur=["مویشیوں کا تجربہ کار کارکن، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_partner": True},
+             en=["Dairy farm seeking a partner to expand into a larger herd"],
+             ur=["ڈیری فارم، شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
     ],
     "Manufacturing": [
         dict(role="supplier", seeking={},
@@ -217,17 +360,129 @@ TEMPLATES = {
                  "Textile manufacturing -- fabric weaving, needs raw cotton and yarn"],
              ur=["جوتے بنانے کا کام، چمڑا چاہیے", "کپڑا بنانے کا کام، خام مال چاہیے"],
              remote=False, physical=True),
+        dict(role="producer", seeking={"seeking_workers": True},
+             en=["Growing manufacturing workshop hiring skilled production staff"],
+             ur=["تیار کرنے کا کاروبار بڑھ رہا ہے، ہنر مند کارکن چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Skilled machine operator / production worker seeking steady factory work"],
+             ur=["ہنر مند مشین آپریٹر، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_partner": True},
+             en=["Small manufacturing unit seeking a partner to scale up production"],
+             ur=["مینوفیکچرنگ یونٹ، شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
     ],
+    # "Services" split 5 Sep 2026 -- moved out of here into 4 dedicated
+    # categories below (Beauty & Personal Care, Construction & Home
+    # Trades, Repair & Maintenance, Education & Tutoring). See the
+    # schema comment on the same date for why: every real listing that
+    # used to be filed under "Services" was actually one of these four,
+    # and leaving them lumped together was defeating the employment
+    # same-category match rule (an electrician and a beautician
+    # counting as "the same trade").
     "Services": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Laundry and dry-cleaning service -- washing, ironing, seeking steady customers or work"],
+             ur=["لانڈری اور ڈرائی کلیننگ سروس، کام چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={},
+             en=["Courier and documentation service -- local delivery, paperwork and errand assistance"],
+             ur=["کورئیر اور دستاویزات کی خدمات"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_inputs": True},
+             en=["General service business needing supplies -- cleaning materials, packaging, office items"],
+             ur=["سروس کاروبار کے لیے سامان چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Growing service business hiring general staff"],
+             ur=["بڑھتا ہوا سروس کاروبار، عملہ چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={"seeking_partner": True},
+             en=["Established service business seeking a partner to expand"],
+             ur=["قائم شدہ سروس کاروبار، شراکت دار چاہیے"],
+             remote=False, physical=False, travel="will_partner_outside_district"),
+    ],
+    "Beauty & Personal Care": [
         dict(role="service", seeking={"seeking_partner": True},
              en=["Beauty parlor and salon services -- haircare, bridal makeup, seeking a partner"],
              ur=["بیوٹی پارلر، شراکت دار چاہیے"],
              remote=False, physical=False, travel="will_partner_outside_district"),
         dict(role="service", seeking={"seeking_work": True},
+             en=["Skilled beautician seeking steady work -- haircare, bridal makeup, skincare"],
+             ur=["ماہر بیوٹیشن، کام کی تلاش میں"],
+             remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Established beauty salon hiring additional staff"],
+             ur=["بیوٹی سیلون، ملازم چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={"seeking_inputs": True},
+             en=["Beauty parlor needing cosmetics, haircare products, and salon supplies"],
+             ur=["بیوٹی پارلر کے لیے میک اپ اور سیلون کا سامان چاہیے"],
+             remote=False, physical=True),
+    ],
+    "Construction & Home Trades": [
+        dict(role="service", seeking={"seeking_work": True},
              en=["Electrician services -- household and commercial wiring, appliance repair",
                  "Plumbing services -- household repairs and installation, seeking work"],
              ur=["بجلی کا کام، مجھے کام چاہیے", "پلمبنگ کا کام، کام چاہیے"],
              remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Construction contractor hiring skilled tradesmen -- masonry, carpentry, wiring"],
+             ur=["تعمیراتی ٹھیکیدار، ہنر مند مزدور چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={},
+             en=["Carpentry and woodwork -- custom furniture, home fittings and repairs"],
+             ur=["بڑھئی کا کام، فرنیچر اور مرمت"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_inputs": True},
+             en=["Construction business needing cement, wiring, pipes, and hardware supplies"],
+             ur=["تعمیراتی کاروبار کے لیے سیمنٹ اور سامان چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_partner": True},
+             en=["Home-trades business seeking a partner to take on larger contracts"],
+             ur=["گھریلو خدمات کا کاروبار، بڑے ٹھیکوں کے لیے شراکت دار چاہیے"],
+             remote=False, physical=False, travel="will_partner_outside_district"),
+    ],
+    "Repair & Maintenance": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Mobile phone and appliance repair -- screen replacement, hardware fixes, seeking work"],
+             ur=["موبائل اور آلات کی مرمت، کام چاہیے"],
+             remote=False, physical=False, travel="will_relocate_for_work"),
+        dict(role="service", seeking={},
+             en=["Vehicle and motorcycle repair workshop -- servicing, parts replacement"],
+             ur=["گاڑی اور موٹرسائیکل مرمت کی ورکشاپ"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Busy repair workshop hiring an additional technician -- mobile, appliance, or vehicle repair skills"],
+             ur=["مصروف مرمت کی ورکشاپ، اضافی ٹیکنیشن چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={"seeking_inputs": True},
+             en=["Repair workshop needing spare parts and replacement components"],
+             ur=["مرمت کی ورکشاپ کے لیے پرزہ جات چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_partner": True},
+             en=["Repair workshop seeking a partner to open a second location"],
+             ur=["مرمت کی ورکشاپ، دوسری برانچ کے لیے شراکت دار چاہیے"],
+             remote=False, physical=False, travel="will_partner_outside_district"),
+    ],
+    "Education & Tutoring": [
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Online tutoring services -- remote teaching, seeking employment, no travel needed"],
+             ur=["آن لائن ٹیوشن، دور سے کام کر سکتی ہوں"],
+             remote=True, physical=False),
+        dict(role="service", seeking={"seeking_workers": True},
+             en=["Tutoring academy hiring additional subject teachers"],
+             ur=["ٹیوشن اکیڈمی، اساتذہ چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={"seeking_inputs": True},
+             en=["Tutoring center needing books, stationery, and teaching materials"],
+             ur=["ٹیوشن سینٹر کے لیے کتابیں اور تدریسی سامان چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_partner": True},
+             en=["Individual tutor seeking a partner to open a proper academy"],
+             ur=["ٹیوٹر، اکیڈمی کھولنے کے لیے شراکت دار چاہیے"],
+             remote=False, physical=False, travel="will_partner_outside_district"),
     ],
     "Food": [
         dict(role="retailer", seeking={"seeking_inputs": True},
@@ -238,12 +493,40 @@ TEMPLATES = {
              en=["Catering and prepared food supplier -- bulk meals, event catering"],
              ur=["کیٹرنگ سروس، کھانا فراہم کرتا ہوں"],
              remote=False, physical=True, travel="will_deliver_outside_area"),
+        dict(role="retailer", seeking={"seeking_workers": True},
+             en=["Growing bakery hiring kitchen and counter staff"],
+             ur=["بیکری کا کاروبار بڑھ رہا ہے، عملہ چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced cook / baker seeking steady kitchen work"],
+             ur=["تجربہ کار باورچی، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="retailer", seeking={"seeking_partner": True},
+             en=["Food business seeking a partner to open a second outlet"],
+             ur=["فوڈ کاروبار، دوسری شاخ کے لیے شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
     ],
     "Three-wheeler / rickshaw": [
         dict(role="logistics", seeking={},
              en=["Three-wheeler rickshaw transport -- passenger and small goods delivery between districts"],
              ur=["رکشہ، سامان کی ترسیل"],
              remote=False, physical=True),
+        dict(role="logistics", seeking={"seeking_inputs": True},
+             en=["Rickshaw operator needing fuel, tyres, and spare parts supply"],
+             ur=["رکشہ کے لیے پرزہ جات اور ایندھن چاہیے"],
+             remote=False, physical=True),
+        dict(role="logistics", seeking={"seeking_workers": True},
+             en=["Small transport business hiring an additional rickshaw driver"],
+             ur=["ٹرانسپورٹ کا کاروبار، اضافی ڈرائیور چاہیے"],
+             remote=False, physical=False),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced rickshaw driver seeking steady work"],
+             ur=["تجربہ کار رکشہ ڈرائیور، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="logistics", seeking={"seeking_partner": True},
+             en=["Rickshaw operator seeking a partner to expand into a small transport fleet"],
+             ur=["رکشہ آپریٹر، فلیٹ بڑھانے کے لیے شراکت دار چاہیے"],
+             remote=False, physical=False, travel="will_partner_outside_district"),
     ],
     "Agriculture": [
         dict(role="producer", seeking={"seeking_workers": True},
@@ -254,6 +537,18 @@ TEMPLATES = {
              en=["Agricultural inputs supplier -- seeds, fertilizer, farming materials"],
              ur=["بیج اور کھاد کی فراہمی"],
              remote=False, physical=True, travel="will_deliver_outside_area"),
+        dict(role="producer", seeking={"seeking_inputs": True},
+             en=["Farm needing seeds, fertilizer, and irrigation supplies for the coming season"],
+             ur=["فارم کے لیے بیج اور کھاد چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced farm laborer seeking seasonal or steady field work"],
+             ur=["تجربہ کار کسان مزدور، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_partner": True},
+             en=["Farm seeking a partner to lease and cultivate additional land"],
+             ur=["فارم، اضافی زمین کاشت کرنے کے لیے شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
     ],
     "Freelancing / technology": [
         dict(role="service", seeking={"seeking_work": True},
@@ -265,18 +560,98 @@ TEMPLATES = {
              en=["Graphic design studio -- branding and digital design, hiring additional designers"],
              ur=["گرافک ڈیزائن اسٹوڈیو، ملازم چاہیے"],
              remote=True, physical=False),
+        # Deliberately no supply_chain template here -- freelance/tech
+        # work has no physical input to seek or supply, unlike every
+        # other category. seeking_inputs would be a fabricated scenario,
+        # not a real one -- see PRODUCT_OR_SERVICE reasoning elsewhere in
+        # this file about not inventing detail that isn't real.
+        dict(role="service", seeking={"seeking_partner": True},
+             en=["Freelance developer or designer seeking a partner to form a small digital agency"],
+             ur=["فری لانسر، ڈیجیٹل ایجنسی بنانے کے لیے شراکت دار چاہیے"],
+             remote=True, physical=False),
     ],
     "Trading businesses": [
         dict(role="retailer", seeking={"seeking_inputs": True},
              en=["Wholesale general trading -- household goods, mixed merchandise retail"],
              ur=["ہول سیل دکان، سامان چاہیے"],
              remote=False, physical=True),
+        dict(role="supplier", seeking={},
+             en=["General merchandise wholesaler -- mixed household and daily-use goods, bulk supply"],
+             ur=["عمومی سامان تھوک میں فراہم کرتا ہوں"],
+             remote=False, physical=True, travel="will_deliver_outside_area"),
         dict(role="supplier", seeking={"seeking_partner": True},
              en=["Import-export trading business -- general merchandise sourcing, seeking a partner"],
              ur=["درآمد برآمد کاروبار، شراکت دار چاہیے"],
              remote=False, physical=True, travel="will_partner_outside_district"),
+        dict(role="retailer", seeking={"seeking_workers": True},
+             en=["Growing trading business hiring warehouse and sales staff"],
+             ur=["تجارتی کاروبار بڑھ رہا ہے، عملہ چاہیے"],
+             remote=False, physical=True),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Experienced trading/sales worker seeking steady employment"],
+             ur=["تجربہ کار سیلز کارکن، کام کی تلاش میں"],
+             remote=False, physical=False),
+    ],
+    "Handicrafts & Artisan Crafts": [
+        dict(role="producer", seeking={"seeking_inputs": True},
+             en=["Handmade pottery and clay craft production -- decorative and functional pieces, needs raw clay and glazing materials",
+                 "Handmade jewelry making -- beads, clay, and metal accessories, needs craft materials"],
+             ur=["مٹی کے برتن اور دستکاری، خام مال چاہیے", "ہاتھ سے بنی جیولری، سامان چاہیے"],
+             remote=False, physical=True),
+        dict(role="supplier", seeking={},
+             en=["Craft-supplies wholesaler -- beads, clay, dyes, and materials for artisans"],
+             ur=["دستکاری کا سامان تھوک میں فراہم کرتا ہوں"],
+             remote=False, physical=True, travel="will_deliver_outside_area"),
+        dict(role="producer", seeking={"seeking_partner": True},
+             en=["Artisan crochet and home decor workshop seeking a partner to expand into new markets"],
+             ur=["دستکاری اور کروشیے کا کام، شراکت دار چاہیے"],
+             remote=False, physical=True, travel="will_partner_outside_district"),
+        dict(role="service", seeking={"seeking_work": True},
+             en=["Skilled artisan (pottery, jewelry, or crochet) seeking steady work or commissions"],
+             ur=["ہنر مند کاریگر، کام کی تلاش میں"],
+             remote=False, physical=False),
+        dict(role="producer", seeking={"seeking_workers": True},
+             en=["Growing handicrafts workshop hiring additional artisans -- pottery, jewelry-making, or crochet skills"],
+             ur=["دستکاری کا بڑھتا ہوا کاروبار، ہنر مند کاریگر چاہیے"],
+             remote=False, physical=True),
     ],
 }
+
+
+# One or two plausible nouns per category, for real business names --
+# added 5 Sep 2026, direct feedback: every generated listing's
+# business_name was hardcoded None, so browse/match screens showed
+# "(unnamed business)" for nearly everyone -- reads as "every business
+# has the same name," not as N distinct businesses.
+BUSINESS_NAME_NOUNS = {
+    "Tailoring & embroidery": ["Tailoring", "Boutique", "Stitching House"],
+    "Grocery / Karyana": ["General Store", "Grocery", "Karyana Store"],
+    "Livestock": ["Farm", "Livestock Farm", "Dairy Farm"],
+    "Manufacturing": ["Works", "Manufacturing", "Industries"],
+    "Services": ["Services", "Service Center"],
+    "Beauty & Personal Care": ["Beauty Parlor", "Salon", "Beauty Studio"],
+    "Construction & Home Trades": ["Electric Works", "Home Services", "Trades"],
+    "Repair & Maintenance": ["Repair Center", "Fix-It Shop", "Workshop"],
+    "Education & Tutoring": ["Tutoring", "Academy", "Learning Center"],
+    "Food": ["Foods", "Bakery", "Kitchen"],
+    "Three-wheeler / rickshaw": ["Transport", "Rickshaw Service", "Logistics"],
+    "Agriculture": ["Farms", "Agri Farms"],
+    "Freelancing / technology": ["Studio", "Tech Services", "Digital Works"],
+    "Trading businesses": ["Traders", "Trading Co.", "Trading Business"],
+    "Handicrafts & Artisan Crafts": ["Crafts", "Pottery Studio", "Artisan Works"],
+}
+
+
+def _generate_business_name(full_name: str, category_name: str) -> str:
+    first = full_name.split()[0]
+    last = full_name.split()[-1]
+    noun = random.choice(BUSINESS_NAME_NOUNS[category_name])
+    pattern = random.choice([
+        f"{first}'s {noun}",
+        f"{first} {noun}",
+        f"{last} {noun}",
+    ])
+    return pattern
 
 
 def weighted_status():
@@ -313,12 +688,12 @@ def run():
         # (+92300777xxxxx / +92300999xxxxx), so this block is unambiguous
         # to spot in the database later.
         phone = f"+9234{1000000 + i:07d}"
-        beneficiaries.append((str(uuid.uuid4()), name, phone, district, cluster_id))
+        beneficiaries.append((str(uuid.uuid4()), name, phone, district, cluster_id, is_male))
 
     psycopg2.extras.execute_values(
         cur,
         "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) values %s",
-        [(bid, name, phone, district, cluster_id, True) for bid, name, phone, district, cluster_id in beneficiaries],
+        [(bid, name, phone, district, cluster_id, True) for bid, name, phone, district, cluster_id, _is_male in beneficiaries],
     )
     print(f"  {len(beneficiaries)} beneficiary_profiles inserted.")
 
@@ -364,29 +739,43 @@ def run():
     # file docstring).
     # -----------------------------------------------------------------
     print("selecting which eligible beneficiaries actually created a listing...")
-    listing_plans = []  # (beneficiary_id, district, cluster_id, category_name, template)
+    listing_plans = []  # (beneficiary_id, district, cluster_id, category_name, template, business_name, is_women_led)
     for (lid, ref, bid, product, category_id, purpose, status, amount, disbursed_on), \
-        (b_id, name, phone, district, cluster_id) in zip(loan_rows, beneficiaries):
+        (b_id, name, phone, district, cluster_id, is_male) in zip(loan_rows, beneficiaries):
         if status not in ("approved", "disbursed") or category_id is None:
             continue
         if random.random() > LISTING_CREATION_RATE:
             continue
         category_name = next(n for n, cid in category_id_by_name.items() if cid == category_id)
         template = random.choice(TEMPLATES[category_name])
-        listing_plans.append((bid, district, cluster_id, category_name, template))
+        business_name = _generate_business_name(name, category_name)
+        listing_plans.append((bid, district, cluster_id, category_name, template, business_name, not is_male))
 
     print(f"  {len(listing_plans)} listings to create -- embedding in batches...")
     en_texts = []
     ur_texts = []
-    for bid, district, cluster_id, category_name, template in listing_plans:
+    for bid, district, cluster_id, category_name, template, business_name, is_women_led in listing_plans:
         # Pick ONE shared index into en/ur so the two stay a real
         # translation pair -- every template above was written with
         # en[i] and ur[i] as matching phrasings, so picking them
         # independently would risk pairing an English sentence with an
         # unrelated Urdu one for the same listing.
         i = random.randrange(len(template["en"]))
-        en_texts.append(template["en"][i])
-        ur_texts.append(template["ur"][i])
+        en_text = template["en"][i]
+        ur_text = template["ur"][i]
+
+        # SPECIALTY_SUFFIXES layer -- see that dict's own comment. 85%,
+        # not 100%: leaving some listings as the plain base template is
+        # itself realistic (not everyone volunteers a specialty), and
+        # keeps a few genuinely-identical-text pairs around, which is
+        # useful for confirming exact-duplicate handling doesn't break.
+        if category_name in SPECIALTY_SUFFIXES and random.random() < 0.85:
+            en_suffix, ur_suffix = random.choice(SPECIALTY_SUFFIXES[category_name])
+            en_text = f"{en_text} -- {en_suffix}"
+            ur_text = f"{ur_text}، {ur_suffix}"
+
+        en_texts.append(en_text)
+        ur_texts.append(ur_text)
 
     # embed_texts() batches the model call -- see file docstring's
     # "performance" note. Chunked at 100 to keep memory/latency
@@ -400,14 +789,14 @@ def run():
 
     listing_rows = []
     participant_rows = []
-    for (bid, district, cluster_id, category_name, template), en_text, ur_text, vector in zip(
+    for (bid, district, cluster_id, category_name, template, business_name, is_women_led), en_text, ur_text, vector in zip(
         listing_plans, en_texts, ur_texts, vectors
     ):
         listing_id = str(uuid.uuid4())
         seeking = template["seeking"]
         travel_flag = template.get("travel")
         listing_rows.append((
-            listing_id, bid, None, category_id_by_name[category_name],
+            listing_id, bid, business_name, category_id_by_name[category_name],
             en_text, ur_text, None,  # skills_en -- not generated here, matches seed_data.py's style
             template["role"],
             seeking.get("seeking_inputs", False), seeking.get("seeking_workers", False),
@@ -416,7 +805,11 @@ def run():
             travel_flag == "will_deliver_outside_area",
             travel_flag == "will_relocate_for_work",
             travel_flag == "will_partner_outside_district",
-            False,  # is_women_led -- not modeled here; seed_data.py's small hand-set already covers that case
+            is_women_led,  # derived from the owning beneficiary's generated gender -- an
+                            # imperfect proxy (gender isn't the same as who leads a business),
+                            # but a real signal instead of a hardcoded False that zeroed out
+                            # the impact report's women_led_businesses metric for every
+                            # generated listing.
             district, cluster_id, vector,
         ))
         participant_rows.append((listing_id, bid, "owner", "confirmed"))
