@@ -120,9 +120,18 @@ class StaffWorkflowTests(unittest.TestCase):
         self.call('POST', '/verifications', self.verification(profile['id'], pid), expected=201)
         self.assertEqual(next(a for a in self.workspace()['applications'] if a['beneficiary_id'] == profile['id'])['entry_path'], 'direct')
 
-    def test_suppressed_microfinance_cannot_be_pooled(self):
-        match = next(m for m in self.workspace()['matches'] if m['status'] == 'suppressed')
-        self.call('POST', f"/matches/{match['id']}/review", {'action': 'pooled'}, expected=409)
+    def test_requires_explicit_application_match_cannot_be_pooled(self):
+        # microfinance is no longer an eligibility-side programme, so build
+        # a requires_explicit_application programme to exercise the same guard.
+        edu = next(p for p in self.workspace()['programs'] if p['id'] == demo_id('Education Support'))
+        self.call('POST', '/programs', self.program_body(
+            edu, name='Explicit-Only Programme', requires_explicit_application=True), expected=201)
+        created = self.call('POST', '/profiles', self.profile_body(monthly_income=12000, school_age_children=2), expected=201)
+        self.assertTrue(any(m['status'] == 'suppressed' for m in created['discovery']))
+        state = self.workspace()
+        row = next(m for m in state['matches']
+                   if m['beneficiary_id'] == created['profile']['id'] and m['status'] == 'suppressed')
+        self.call('POST', f"/matches/{row['id']}/review", {'action': 'pooled'}, expected=409)
 
     def test_budget_enforced_and_atomic(self):
         pid = demo_id('Education Support')

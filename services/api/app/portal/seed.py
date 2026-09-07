@@ -4,11 +4,13 @@ Reuses packages/data/synthetic.py -- THE SAME generator the XGBoost
 confidence model trains on (packages/eligibility/run_model_pipeline.py) --
 so the demo actually varies:
 
-  * 7 programmes with genuinely different hard rules (a district-gated
+  * 6 programmes with genuinely different hard rules (a district-gated
     disaster programme, a district-gated WASH programme, income+chronic
     health, income+school-child education, orphan+dependents, unemployed
-    skills training, age-gated interest-free microfinance), each with its
-    own priority-weight profile, budget, and cycle capacity;
+    skills training), each with its own priority-weight profile, budget,
+    and cycle capacity. Microfinance is deliberately NOT one of them --
+    a loan is a debt, never "found eligible" for proactively; it lives
+    entirely on the marketplace side (see PROGRAM_META);
   * ~85 beneficiaries with a real multivariate spread and realistic
     partial data (incomes 5k-90k, 5-25% missing fields), so discovery
     lands some people in three programmes, some in one, and some in none;
@@ -77,9 +79,13 @@ PROGRAM_META = {
     'bano_qabil': dict(
         name='Bano Qabil Skills Training', budget=None, capacity=25, valid_days=60,
         weights={'income_inverse': .35, 'dependents': .20, 'no_prior_assistance': .25, 'school_age_children': .20}),
-    'islamic_microfinance': dict(
-        name='Mawakhat Interest-Free Loan', budget=700_000, capacity=4, valid_days=90,
-        weights={'income_inverse': .30, 'dependents': .20, 'disability': .10, 'no_prior_assistance': .20, 'school_age_children': .20}),
+    # islamic_microfinance is deliberately NOT here. A loan is a debt --
+    # nobody is "found eligible" for it proactively (SRS 5.3 / CLAUDE.md).
+    # It lives entirely on the marketplace side as the sign-up gate
+    # (microfinance_loans + the eligibility check in packages/marketplace),
+    # never as a discoverable eligibility-side programme. The generator
+    # still trains the XGBoost model with it as a domain; the seed just
+    # never creates a programme row for it, so discovery never scores it.
 }
 
 NAMES = [
@@ -136,8 +142,9 @@ def seed_demo():
         staff_id = demo_id('staff')
         officer_id = demo_id('officer')
 
-        # ---- departments + programmes (rules from the shared generator) ----
-        programs = build_synthetic_programs()
+        # ---- departments + programmes (rules from the shared generator,
+        #      minus islamic_microfinance -- see PROGRAM_META) ----
+        programs = [p for p in build_synthetic_programs() if p.domain != 'islamic_microfinance']
         program_ids = {}
         for prog in programs:
             meta = PROGRAM_META[prog.domain]
@@ -152,7 +159,7 @@ def seed_demo():
                 description='Synthetic hackathon programme. Criteria, budgets and capacities are illustrative examples, not Al-Khidmat policy.',
                 criteria_structured={'hard_rules': [r.model_dump(mode='json') for r in prog.rules]},
                 priority_weights=validate_weights(dict(meta['weights'])),
-                requires_explicit_application=prog.domain == 'islamic_microfinance',
+                requires_explicit_application=False,  # none of the seeded 6 are explicit-only
                 active=True, has_document_criteria=True,
                 budget_per_cycle=meta['budget'], capacity_per_cycle=meta['capacity'],
                 cycle_frequency_days=14, verification_valid_days=meta['valid_days'],
@@ -258,15 +265,19 @@ def seed_demo():
                     make_application(prof, pid, str(ver['id']),
                                      entry_path='direct' if k % 4 == 0 else 'ai_identified')
 
-        # ---- direct-application path: microfinance never goes through
-        #      proactive outreach (requires_explicit_application), so its
-        #      whole pool is people who walked in and applied ----
-        micro = program_ids['islamic_microfinance']
-        micro_rules = build_synthetic_programs()[6].rules
-        walk_ins = [p for p in (s.get(db, t.profiles, i) for i in profile_ids)
-                    if _passes(p, micro_rules)][:6]
-        for k, prof in enumerate(walk_ins):
-            ver = make_verification(prof, micro, 'islamic_microfinance', 'verified')
-            make_application(prof, micro, str(ver['id']), entry_path='direct')
+        # ---- direct-application path: people who walked into a facilitation
+        #      centre and applied for a specific programme themselves. They
+        #      are ranked identically to AI-identified candidates (SRS 7.4);
+        #      entry_path is recorded for audit only. Pick a few per
+        #      programme who pass its hard rules but were NOT AI-suggested. ----
+        rules_by_domain = {p.domain: p.rules for p in programs}
+        for domain, pid in program_ids.items():
+            already = {str(a['beneficiary_id']) for a in s.rows(db, t.applications)
+                       if str(a['program_id']) == pid}
+            walk_ins = [p for p in (s.get(db, t.profiles, i) for i in profile_ids)
+                        if str(p['id']) not in already and _passes(p, rules_by_domain[domain])]
+            for prof in walk_ins[:rng.randint(1, 3)]:
+                ver = make_verification(prof, pid, domain, 'verified')
+                make_application(prof, pid, str(ver['id']), entry_path='direct')
 
         db.commit()
