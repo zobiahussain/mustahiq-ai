@@ -40,6 +40,7 @@ def main():
     print("\nStep 2 -- save (person tapped confirm)...")
     listing_id = save_listing(
         beneficiary_id=fahad_id,
+        trade_category="Grocery / Karyana",
         role="retailer",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],
@@ -64,9 +65,9 @@ def main():
     row = cur.fetchone()
     conn.close()
 
-    print(f"\nSaved row:")
+    print("\nSaved row:")
     print(f"  business_name: {row[0]}")
-    print(f"  trade_category_id: {row[1]} (should be Grocery/Karyana's id, auto-derived from his loan)")
+    print(f"  trade_category_id: {row[1]} (should be Grocery / Karyana's id -- the category passed to save_listing())")
     print(f"  district: {row[2]} (should be Lahore, auto-derived from his profile)")
     print(f"  product_or_service_en: {row[3]}")
 

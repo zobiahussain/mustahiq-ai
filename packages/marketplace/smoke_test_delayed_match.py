@@ -38,11 +38,24 @@ def cleanup_old_test_listing(beneficiary_id):
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
     cur.execute(
-        "delete from marketplace_matches where listing_a_id in "
-        "(select id from store_listings where primary_beneficiary_id = %s) "
-        "or listing_b_id in (select id from store_listings where primary_beneficiary_id = %s)",
-        (beneficiary_id, beneficiary_id),
+        "select id from store_listings where primary_beneficiary_id = %s", (beneficiary_id,)
     )
+    listing_ids = [r[0] for r in cur.fetchall()]
+    if listing_ids:
+        cur.execute(
+            "delete from marketplace_matches "
+            "where listing_a_id = any(%s::uuid[]) or listing_b_id = any(%s::uuid[])",
+            (listing_ids, listing_ids),
+        )
+        # graduation_events / donations reference a listing WITHOUT a cascade
+        # (a graduation is a real historical fact, not deleted with the
+        # listing) -- null the link before the listing goes, or the delete
+        # below fails on the FK. Earlier runs of the graduation smoke test
+        # against this same seeded beneficiary leave exactly these rows.
+        cur.execute("update graduation_events set listing_id = null where listing_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update donations set listing_id = null where listing_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update marketplace_matches set suggested_logistics_id = null where suggested_logistics_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update marketplace_matches set dismissed_by_listing_id = null where dismissed_by_listing_id = any(%s::uuid[])", (listing_ids,))
     cur.execute("delete from listing_participants where beneficiary_id = %s", (beneficiary_id,))
     cur.execute("delete from store_listings where primary_beneficiary_id = %s", (beneficiary_id,))
     conn.commit()
@@ -59,6 +72,7 @@ def main():
     draft = enrich_listing_text(bilal_id, "چمڑا فراہم کرتا ہوں")  # "I supply leather"
     listing_id = save_listing(
         beneficiary_id=bilal_id,
+        trade_category="Manufacturing",
         role="supplier",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],

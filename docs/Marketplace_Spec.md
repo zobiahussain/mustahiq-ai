@@ -48,8 +48,13 @@ on the beneficiary app, and it operates without staff involvement.
    being flattened into one catch-all "Services" bucket, which was quietly defeating the
    employment same-category matching rule described in §5.3's quality floor below, since
    two completely unrelated trades would share a category and be treated as a safe
-   same-trade employment match). The category itself is still staff-picked and locked —
-   a beneficiary never edits it — this only changed how many options staff choose from.
+   same-trade employment match). Expanding the list to fifteen changed how many options
+   there are to choose from; **7 Sep 2026 a second change moved WHO chooses**: the
+   loan's `trade_category_id` is now only the eligibility gate ("financed into a
+   business at all"), and the listing's own category is picked when the listing is
+   created — `FULL_DRAFT_PROMPT` proposes one, the review screen shows it pre-selected
+   and changeable (§3.2). A beneficiary whose real trade differs from the loan-desk
+   record — or anyone testing — was otherwise stuck with a mis-filed listing.
 3. The loan is **approved** — Al-Khidmat's loan system records the outcome, in this
    schema a row in `microfinance_loans` (`loan_reference`, `loan_product`,
    `trade_category_id`, `stated_purpose_text`, `status`, `amount_disbursed`,
@@ -166,12 +171,12 @@ garment production," it actually matches a fabric supplier searching in English.
 prompt = f"""
 A small-business owner in Pakistan recorded (or typed) a description of
 their business, in their own words, in whatever language felt natural.
-Trade category (already known, don't re-derive it): {trade_category}
 
 What they said: "{raw_text}"
 
 Read it and draft a marketplace listing. Return JSON:
 {{
+  "trade_category": "the single best fit from this list, verbatim: {trade_categories}",
   "role": "exactly one of: supplier, producer, retailer, service, logistics",
   "seeking_inputs" / "seeking_workers" / "seeking_partner" / "seeking_work": true/false,
   "business_name": "... or null",
@@ -217,7 +222,7 @@ them and to whoever they match with). Nobody has to read or write English to use
 
 | Field | Purpose |
 |---|---|
-| Trade category | Already known from the loan record — not asked |
+| Trade category | AI-drafted from the free text, shown pre-selected and changeable on the review screen (7 Sep 2026 — was inherited from the loan record). The loan still gates whether someone can list at all |
 | Product or service | `_en` (embedded, matched) + `_original` (shown to people) — AI-drafted, editable |
 | Skills | Same `_en`/`_original` split — from the same LLM call as product/service |
 | Role | supplier, producer, retailer, service, or logistics — AI-drafted, editable |

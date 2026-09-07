@@ -278,6 +278,11 @@ class SaveListingBody(BaseModel):
     # beneficiary_profiles.cluster_id server-side (create_listing.py),
     # never trusted from the client, same reasoning as beneficiary_id
     # itself never coming from the request body.
+    trade_category: str   # NAME (e.g. "Manufacturing") -- LLM-drafted in
+                          # POST /listing/draft, shown pre-selected and
+                          # changeable on the review screen, validated
+                          # server-side in save_listing(). No longer
+                          # inherited from the microfinance loan.
     role: str
     product_or_service_en: str
     product_or_service_original: str

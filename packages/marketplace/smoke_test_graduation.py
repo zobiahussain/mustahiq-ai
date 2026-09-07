@@ -67,7 +67,7 @@ def main():
     from create_listing import enrich_listing_text, save_listing
     draft = enrich_listing_text(fresh_bid, "آن لائن ٹیوشن")
     save_listing(
-        beneficiary_id=fresh_bid, role="service",
+        beneficiary_id=fresh_bid, trade_category="Education & Tutoring", role="service",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],
         seeking_work=True, is_remote_capable=True, output_is_physical=False,
