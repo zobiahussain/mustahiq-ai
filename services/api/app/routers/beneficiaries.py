@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -6,8 +6,14 @@ from app.core.auth import get_current_staff
 from app.core.db import get_db
 from app.schemas.beneficiary import BeneficiaryCreate, BeneficiaryDetail, BeneficiaryResponse
 from app.services.duplicate_detection import check_duplicates
+from app.services.eligibility_matching import refresh_beneficiary_matches
+from eligibility.persistence import SavedScorer
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
+
+
+def get_eligibility_scorer(request: Request) -> SavedScorer:
+    return request.app.state.eligibility_scorer
 
 
 @router.get("/", response_model=list[BeneficiaryDetail])
@@ -47,6 +53,7 @@ def create_beneficiary(
     payload: BeneficiaryCreate,
     db: Session = Depends(get_db),
     staff: dict = Depends(get_current_staff),
+    scorer: SavedScorer = Depends(get_eligibility_scorer),
 ):
     result = db.execute(
         text("""
@@ -62,5 +69,10 @@ def create_beneficiary(
     db.commit()
 
     check_duplicates(db, new_profile_id=row.id, full_name=row.full_name, phone=row.phone, cnic=row.cnic)
+    try:
+        refresh_beneficiary_matches(db, row.id, scorer)
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"eligibility configuration error: {error}") from error
 
     return dict(row._mapping)

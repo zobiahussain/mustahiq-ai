@@ -5,3 +5,5 @@ python-dotenv>=1.0
 psycopg2-binary>=2.9
 python-multipart>=0.0.12
 requests>=2.31          # smoke_test_new_endpoints.py -- real HTTP calls against a running server
+pydantic-settings>=2.6
+-r ../../packages/eligibility/requirements.txt

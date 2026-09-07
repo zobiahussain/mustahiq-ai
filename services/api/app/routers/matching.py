@@ -1,17 +1,14 @@
-import random
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_staff
 from app.core.db import get_db
 from app.schemas.matching import ProgramMatch
+from app.services.eligibility_matching import get_persisted_matches
 
 router = APIRouter(prefix="/beneficiaries", tags=["matching"])
-
-STUB_REASON = "Stub — pending Eligibility Engine integration"
-
 
 @router.get("/{beneficiary_id}/matches", response_model=list[ProgramMatch])
 def get_beneficiary_matches(
@@ -19,16 +16,9 @@ def get_beneficiary_matches(
     db: Session = Depends(get_db),
     staff: dict = Depends(get_current_staff),
 ):
-    rows = db.execute(
-        text("select id, name from programs where active = true")
-    ).fetchall()
+    try:
+        parsed_beneficiary_id = UUID(beneficiary_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="beneficiary_id must be a UUID") from error
 
-    return [
-        ProgramMatch(
-            program_id=row.id,
-            program_name=row.name,
-            score=round(random.random(), 4),
-            reason=STUB_REASON,
-        )
-        for row in rows
-    ]
+    return get_persisted_matches(db, parsed_beneficiary_id)
