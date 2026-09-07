@@ -302,6 +302,7 @@ Both webhooks require the `X-Internal-Key` header — a missing or wrong key get
 | `packages/data/generate_new_category_seed_data.py` | Targeted top-up for a fixed category list — mostly superseded by `generate_seed_data.py`'s balanced-coverage pass; still handy right after adding new `TEMPLATES` without a full re-run |
 | `packages/data/export_seed_data.py` | Dumps the live database to CSV for review in Excel |
 | `packages/data/create_test_customer.py` | One real customer at a time, via CLI args or prompts |
+| `packages/data/seed_demo_accounts.py` | The fixed cast of demo login numbers (one per trade category, Lahore + Karachi, no listing yet) — re-runnable; see `docs/Demo_Accounts.md` |
 | `packages/data/import_test_customers.py` | Many real customers at once, from `test_customers_template.csv` |
 | `packages/marketplace/smoke_test_*.py` | Each tests one piece of the module against the live database |
 | `services/api/smoke_test_new_endpoints.py` | Real HTTP tests against a running server |
