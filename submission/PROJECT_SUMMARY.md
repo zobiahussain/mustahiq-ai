@@ -1,6 +1,6 @@
 # Mustahiq AI — hackathon submission
 
-Al-Khidmat Foundation × Alibaba × GitHub · AI Hackathon Pakistan
+The first Alibaba Cloud AI Hackathon in Pakistan · hosted by Al-Khidmat Foundation
 
 ---
 
@@ -60,9 +60,9 @@ submission at the branch) so the judges see the complete project.
 - `Mustahiq_AI_Presentation.pptx` — 11 slides, 16:9, editable.
 - `Mustahiq_AI_Presentation.pdf` — same deck, ready to upload if PPTX conversion misbehaves.
 
-**Add two screenshots to slide 8** (the placeholders are labelled): the staff portal
-dashboard and a marketplace match-results screen. That slide is the most persuasive one —
-real product beats a diagram.
+Slide 8 carries **real screenshots** of both apps running on the synthetic demo data (staff
+dashboard + the marketplace home). Swap in fresher ones any time — they're just pictures on
+the slide.
 
 ### Per-slide talking points (mixed panel — keep it plain)
 
@@ -76,13 +76,14 @@ real product beats a diagram.
    *eliminate*; the model only *ranks confidence*. Nobody is auto-enrolled.
 5. **Fairness** — the rubric is shown to staff, weight by weight; entry path is recorded
    but can never enter the maths; every decision has a plain-language reason.
-6. **The AI, honestly** — XGBoost on 15,000 synthetic profiles, held-out ROC-AUC ≈ 0.76.
+6. **The confidence model** — XGBoost on 15,000 synthetic profiles, held-out ROC-AUC ≈ 0.76.
    No LLM in scoring, no training on real people, never decides funding. Deliberately
    narrow — that's the point.
 7. **Marketplace** — loan → describe your business by voice → matched across three models
    (supply chain / employment / joint venture) → both sides notified → they deal directly.
    No fees, no commission.
-8. **Demo** — "everything you just heard is running." 41 + 33 tests green.
+8. **The product** — both screens on this slide are the real apps on synthetic demo data.
+   41 + 33 automated tests, plus marketplace smoke tests.
 9. **Constraints** — free tier only, every answer cited, any language in, staff-operated.
 10. **Impact** — before/after: one programme → all of them in milliseconds; memory →
     a snapshotted rubric; no record → a reason for every decision.

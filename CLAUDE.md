@@ -1,6 +1,6 @@
 # Mustahiq AI — Al-Khidmat Beneficiary Matching & Allocation Platform
 
-Hackathon project (Alibaba × GitHub × X). Team of five. This repo covers **my module**, not the whole platform.
+Hackathon project — the first Alibaba Cloud AI Hackathon in Pakistan, hosted by Al-Khidmat Foundation. Team of five. This repo covers **my module**, not the whole platform.
 
 > **Big update (29 Aug 2026):** the team delivered a substantially revised doc set —
 > the platform pivoted from a beneficiary self-service model to a **staff-operated case
