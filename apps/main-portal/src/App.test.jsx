@@ -49,14 +49,14 @@ beforeEach(() => {
 afterEach(cleanup);
 async function login() {
   const user = userEvent.setup(); render(<App/>);
-  await user.click(await screen.findByRole('button', { name: /Enter demo workspace/i }));
+  await user.click(await screen.findByRole('button', { name: /Enter the workspace/i }));
   await screen.findByRole('heading', { name: 'Welcome back.' }); return user;
 }
 
 describe('staff portal interactions', () => {
   it('opens a clearly labeled demo with real workspace counts', async () => {
     await login();
-    expect(screen.getByText(/People, budgets, and program policies are fictional/)).toBeTruthy();
+    expect(screen.getByText(/no real beneficiary data/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Registered beneficiaries/ }).textContent).toContain('1');
   });
   it('does not show the public support chatbot option', async () => {
@@ -109,7 +109,7 @@ describe('staff portal interactions', () => {
   });
   it('clears protected casework when a session expires', async () => {
     await login(); window.dispatchEvent(new Event('staff-session-expired'));
-    expect(await screen.findByRole('button', { name: /Enter demo workspace/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Enter the workspace/ })).toBeTruthy();
     expect(screen.queryByText('Fatima Bibi')).toBeNull();
   });
 });
