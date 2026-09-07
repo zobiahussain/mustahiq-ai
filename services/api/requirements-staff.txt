@@ -1,0 +1,3 @@
+-r ../../requirements.txt
+-r ../../packages/eligibility/requirements.txt
+pyjwt>=2.9

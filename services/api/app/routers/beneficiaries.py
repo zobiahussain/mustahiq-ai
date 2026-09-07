@@ -1,66 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
-from app.core.auth import get_current_staff
+"""Original route paths backed by the complete staff profile contract."""
+from uuid import UUID
+from fastapi import APIRouter, Depends, Query
 from app.core.db import get_db
-from app.schemas.beneficiary import BeneficiaryCreate, BeneficiaryDetail, BeneficiaryResponse
-from app.services.duplicate_detection import check_duplicates
+from app.portal.auth import current_staff
+from app.portal.contracts import ProfileInput
+from app.portal.router import create_profile, workspace
+from app.portal.service import profile_for
 
-router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
-
-
-@router.get("/", response_model=list[BeneficiaryDetail])
-def list_beneficiaries(
-    limit: int = 50,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-    staff: dict = Depends(get_current_staff),
-):
-    rows = db.execute(
-        text("select * from beneficiary_profiles order by created_at desc limit :limit offset :offset"),
-        {"limit": limit, "offset": offset},
-    ).fetchall()
-
-    return [dict(row._mapping) for row in rows]
+router = APIRouter(prefix='/beneficiaries', tags=['beneficiaries'])
 
 
-@router.get("/{beneficiary_id}", response_model=BeneficiaryDetail)
-def get_beneficiary(
-    beneficiary_id: str,
-    db: Session = Depends(get_db),
-    staff: dict = Depends(get_current_staff),
-):
-    row = db.execute(
-        text("select * from beneficiary_profiles where id = :id"),
-        {"id": beneficiary_id},
-    ).fetchone()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail="Beneficiary not found")
-
-    return dict(row._mapping)
+@router.get('/')
+def list_beneficiaries(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), db=Depends(get_db), staff=Depends(current_staff)):
+    return workspace(db, staff)['profiles'][offset:offset + limit]
 
 
-@router.post("/", response_model=BeneficiaryResponse)
-def create_beneficiary(
-    payload: BeneficiaryCreate,
-    db: Session = Depends(get_db),
-    staff: dict = Depends(get_current_staff),
-):
-    result = db.execute(
-        text("""
-            insert into beneficiary_profiles
-                (full_name, cnic, phone, district, city, household_size, dependents, monthly_income, created_by_staff_id)
-            values
-                (:full_name, :cnic, :phone, :district, :city, :household_size, :dependents, :monthly_income, :staff_id)
-            returning id, full_name, cnic, phone, district
-        """),
-        {**payload.model_dump(), "staff_id": staff["id"]},
-    )
-    row = result.fetchone()
-    db.commit()
+@router.get('/{beneficiary_id}')
+def get_beneficiary(beneficiary_id: UUID, db=Depends(get_db), staff=Depends(current_staff)):
+    return profile_for(db, staff, beneficiary_id)
 
-    check_duplicates(db, new_profile_id=row.id, full_name=row.full_name, phone=row.phone, cnic=row.cnic)
 
-    return dict(row._mapping)
+@router.post('/', status_code=201)
+def create_beneficiary(payload: ProfileInput, db=Depends(get_db), staff=Depends(current_staff)):
+    return create_profile(payload, db, staff)['profile']

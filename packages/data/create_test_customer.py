@@ -66,9 +66,6 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "marketplace"))
-from proximity import cluster_for  # noqa: E402
-
 VALID_STATUSES = ("approved", "disbursed", "defaulted", "rejected")
 
 
@@ -177,9 +174,7 @@ def main():
     parser.add_argument("--phone", help="e.g. +923005559999")
     parser.add_argument("--name", help="full name")
     parser.add_argument("--district", help="e.g. Multan -- see packages/marketplace/proximity.py for the full list")
-    parser.add_argument("--cluster", help="defaults to proximity.cluster_for(district) -- the same "
-                                          "canonical map the seed data uses, so a test customer "
-                                          "shares a cluster with seeded listings in that district")
+    parser.add_argument("--cluster", help="defaults to first-3-letters-of-district + '-01' if omitted")
     parser.add_argument("--category", help="one of the 10 real trade categories, or empty string for 'not a business'")
     parser.add_argument("--status", choices=VALID_STATUSES, default="approved")
     args = parser.parse_args()
@@ -187,7 +182,7 @@ def main():
     phone = args.phone or input("Phone (e.g. +923005559999): ").strip()
     full_name = args.name or input("Full name: ").strip()
     district = args.district or input("District (e.g. Multan): ").strip()
-    cluster_id = args.cluster or cluster_for(district)
+    cluster_id = args.cluster or f"{district[:3].upper()}-01"
     category = args.category if args.category is not None else input(
         "Trade category (one of the 10 real names, or blank for 'not a business'): "
     ).strip()
