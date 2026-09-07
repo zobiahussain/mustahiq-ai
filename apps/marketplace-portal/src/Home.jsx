@@ -151,7 +151,7 @@ export default function Home({ token, context, onCreateListing, onSelectListing 
           <label className="checkbox-row">
             <input type="checkbox" checked={isWomenLed} onChange={(e) => setIsWomenLed(e.target.checked)} />
             <span>
-              Women-led only <span className="ur" style={{ fontSize: 15 }}>خواتین کی رہنمائی میں</span>
+              Women-led only <span className="ur" style={{ fontSize: 15 }}>خواتین کی قیادت میں</span>
             </span>
           </label>
 

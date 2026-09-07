@@ -417,7 +417,7 @@ export default function ListingWizard({ token, context, onDone }) {
             <label className="checkbox-row">
               <input type="checkbox" checked={isWomenLed} onChange={(e) => setIsWomenLed(e.target.checked)} />
               <span>
-                Women-led business <span className="ur" style={{ fontSize: 15 }}>خواتین کی رہنمائی میں کاروبار</span>
+                Women-led business <span className="ur" style={{ fontSize: 15 }}>خواتین کی قیادت میں کاروبار</span>
               </span>
             </label>
 
