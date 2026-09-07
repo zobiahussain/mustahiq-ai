@@ -7,6 +7,7 @@ import math
 
 FACTOR_DEFINITIONS = {
     'income_inverse': '1 − min(verified income / PKR 50,000, 1)',
+    'household_size': 'min(verified household size / 10, 1)',
     'dependents': 'min(dependents / 10, 1)',
     'disability': '1 if disability confirmed, otherwise 0',
     'no_prior_assistance': '1 / (1 + prior assistance count)',
@@ -29,9 +30,11 @@ def validate_weights(weights):
 
 
 def score_need(*, verified_income, dependents, has_disability, prior_assistance_count,
-               school_age_children, urgency_level, chronic_illness_flag, cycles_waited, weights):
+               school_age_children, urgency_level, chronic_illness_flag, cycles_waited, weights,
+               verified_household_size=None):
     validate_weights(weights)
-    raw = {'income_inverse': verified_income, 'dependents': dependents, 'disability': has_disability,
+    raw = {'income_inverse': verified_income, 'household_size': verified_household_size,
+           'dependents': dependents, 'disability': has_disability,
            'no_prior_assistance': prior_assistance_count, 'school_age_children': school_age_children,
            'urgency': urgency_level, 'chronic_illness': chronic_illness_flag, 'waiting_time': cycles_waited}
     missing = [key for key, weight in weights.items() if weight > 0 and raw[key] is None]
@@ -39,6 +42,7 @@ def score_need(*, verified_income, dependents, has_disability, prior_assistance_
         raise ValueError('Complete verified ranking factors: ' + ', '.join(missing))
     values = {
         'income_inverse': max(0, 1 - min((verified_income or 0) / 50000, 1)),
+        'household_size': min((verified_household_size or 0) / 10, 1),
         'dependents': min((dependents or 0) / 10, 1), 'disability': float(bool(has_disability)),
         'no_prior_assistance': 1 / (1 + (prior_assistance_count or 0)),
         'school_age_children': min((school_age_children or 0) / 6, 1),

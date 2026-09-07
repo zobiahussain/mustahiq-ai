@@ -239,6 +239,7 @@ def run_cycle(db, staff, program_id):
         facts = verification['program_specific_data'] or {}
         try:
             score, breakdown = score_need(verified_income=float(verification['verified_income']),
+                verified_household_size=verification['verified_household_size'],
                 dependents=facts.get('dependents'), has_disability=facts.get('has_disability'),
                 prior_assistance_count=facts.get('prior_assistance_count'), school_age_children=facts.get('school_age_children'),
                 urgency_level=verification['urgency_level'], chronic_illness_flag=facts.get('chronic_illness_flag'),
