@@ -49,14 +49,33 @@ forth is always visible in the terminal, not just in behavior.
 import inspect
 import json
 import os
+import sys
 
 import requests
 from dotenv import load_dotenv
-from groq import Groq
+from groq import Groq, RateLimitError
 
 # loaded here, once, so every caller gets GROQ_API_KEY for free instead of
 # each one having to remember to call load_dotenv() itself first
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
+# FORCE UTF-8 ON OUR OUTPUT STREAMS -- WHY THIS FILE
+# --------------------------------------------------------------------------
+# LLM output and the Urdu/original listing text it works with are full of
+# characters a default Windows console (cp1252) cannot encode: non-breaking
+# hyphens (‑), smart quotes, em dashes, and Urdu script itself. Any
+# bare print() of a match reason or a listing field then dies with
+# UnicodeEncodeError -- and in match_and_notify() that print sits AFTER
+# matches are persisted but BEFORE matches_computed_at is set, so the crash
+# leaves the frontend polling forever. This file is imported by every path
+# that produces such text, so reconfiguring here fixes it once, everywhere.
+# errors="replace" over "strict" -- a mangled character in a terminal log
+# line is nothing; a crashed background task is a hung demo.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # already wrapped, or not a real stream
+        pass
 
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 
@@ -68,19 +87,33 @@ LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").lower()
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://100.72.1.8:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
 
-_client: Groq | None = None
+# Two clients, built once each: the primary key, and an OPTIONAL fallback
+# (a team member's key -- GROQ_API_KEY_FALLBACK in .env). Each Groq org has
+# its OWN per-minute token quota, so when the primary's quota is genuinely
+# exhausted for the minute, retrying the SAME key just waits; retrying the
+# OTHER key actually gets through. See chat() for the switch -- it is loud
+# (prints a line), one-directional per call, and only after the SDK's own
+# ret/backoff on the primary is exhausted. Never silent.
+_clients: dict[str, Groq] = {}
 
 
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "GROQ_API_KEY not set. Add it to .env at the repo root."
-            )
-        _client = Groq(api_key=api_key)
-    return _client
+def _client_for(api_key: str) -> Groq:
+    if api_key not in _clients:
+        # max_retries -- the SDK honours the 429 response's own `retry-after`
+        # hint ("try again in 8.4s") and backs off exponentially otherwise.
+        # Default is 2; match_and_notify() can fire ~10 reason calls
+        # back-to-back and the free tier's per-minute TOKEN limit is easy to
+        # trip on a burst. CLAUDE.md's #1 demo risk -- this plus the
+        # fallback key below is the mitigation.
+        _clients[api_key] = Groq(api_key=api_key, max_retries=6)
+    return _clients[api_key]
+
+
+def _primary_key() -> str:
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY not set. Add it to .env at the repo root.")
+    return key
 
 
 def _chat_ollama(messages: list[dict], *, json_mode: bool, call_site: str) -> str:
@@ -161,21 +194,38 @@ def chat(
     if LLM_PROVIDER == "ollama":
         return _chat_ollama(messages, json_mode=json_mode, call_site=call_site)
 
-    client = _get_client()
     kwargs = {"model": model, "messages": messages}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    response = client.chat.completions.create(**kwargs)
+    # Primary key first (with the SDK's own retry/backoff). Only if that's
+    # a genuine RateLimitError -- the primary org's per-minute quota is
+    # spent -- fall back to GROQ_API_KEY_FALLBACK, a different org with its
+    # own quota. Loud, not silent.
+    fallback_key = os.environ.get("GROQ_API_KEY_FALLBACK")
+    keys = [("primary", _primary_key())]
+    if fallback_key and fallback_key != _primary_key():
+        keys.append(("fallback", fallback_key))
 
-    usage = response.usage
-    print(
-        f"[groq] {call_site}  model={model}  "
-        f"prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
-        f"total={usage.total_tokens}"
-    )
+    last_error: RateLimitError | None = None
+    for which, key in keys:
+        try:
+            response = _client_for(key).chat.completions.create(**kwargs)
+        except RateLimitError as e:
+            last_error = e
+            if which != keys[-1][0]:
+                print(f"[groq] {call_site}  {which} key rate-limited -- switching to the fallback key")
+            continue
+        usage = response.usage
+        tag = "" if which == "primary" else "  key=fallback"
+        print(
+            f"[groq] {call_site}  model={model}  "
+            f"prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
+            f"total={usage.total_tokens}{tag}"
+        )
+        return response.choices[0].message.content
 
-    return response.choices[0].message.content
+    raise last_error
 
 
 def chat_json(prompt: str, *, system: str | None = None, model: str = DEFAULT_MODEL) -> dict:
@@ -199,7 +249,7 @@ def transcribe_audio(audio_bytes: bytes, filename: str = "audio.webm") -> str:
     through this file, which is why the printed line below looks
     different from chat()'s.
     """
-    client = _get_client()
+    client = _client_for(_primary_key())
     response = client.audio.transcriptions.create(
         file=(filename, audio_bytes),
         model="whisper-large-v3",

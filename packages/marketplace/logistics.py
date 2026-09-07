@@ -48,6 +48,29 @@ def add_logistics_route(
             "routes only make sense on a logistics-role listing"
         )
 
+    # An operator adding the SAME route twice (same corridor, same vehicle,
+    # same capacity) is a mistake, not a second route -- return the existing
+    # one instead of stacking a duplicate. Without this, repeated calls (a
+    # re-run smoke test, a double-tap in the UI) pile up identical rows, and
+    # search_transport() then shows that operator once per row. A unique
+    # index (migration 0002) is the hard backstop; this keeps the call
+    # idempotent rather than letting it raise on the constraint.
+    cur.execute(
+        """
+        select id from logistics_routes
+        where listing_id = %s and from_district = %s and to_district = %s
+          and vehicle_type is not distinct from %s
+          and capacity_description is not distinct from %s
+          and active = true
+        """,
+        (listing_id, from_district, to_district, vehicle_type, capacity_description),
+    )
+    existing = cur.fetchone()
+    if existing:
+        cur.close()
+        conn.close()
+        return existing[0]
+
     cur.execute(
         """
         insert into logistics_routes (listing_id, from_district, to_district, vehicle_type, capacity_description)
@@ -67,9 +90,15 @@ def search_transport(from_district: str, to_district: str) -> list[dict]:
     """Schema reference query C -- for a cross-cluster match, or for any direct search."""
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
+    # DISTINCT ON (id, vehicle, capacity): one row per operator PER distinct
+    # vehicle/capacity they offer on this corridor -- so a genuine "rickshaw
+    # OR loader" operator still shows both options, but identical duplicate
+    # route rows collapse to one instead of listing the same operator N
+    # times. (DISTINCT ON treats NULLs as equal, which is what we want here.)
     cur.execute(
         """
-        select l.id, l.business_name, r.vehicle_type, r.capacity_description
+        select distinct on (l.id, r.vehicle_type, r.capacity_description)
+               l.id, l.business_name, r.vehicle_type, r.capacity_description
         from logistics_routes r
         join store_listings l on l.id = r.listing_id
         where r.active = true
@@ -77,6 +106,7 @@ def search_transport(from_district: str, to_district: str) -> list[dict]:
           and l.availability in ('seeking', 'open_to_offers')
           and r.from_district = %s
           and r.to_district = %s
+        order by l.id, r.vehicle_type, r.capacity_description
         """,
         (from_district, to_district),
     )
