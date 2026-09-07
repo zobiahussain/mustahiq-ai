@@ -243,14 +243,21 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
   number only gets an OTP if it matches a `beneficiary_profiles` row, and full app access
   (the listing-creation flow specifically) requires a `microfinance_loans` row with
   `status` `approved`/`disbursed` **and** `trade_category_id` set — eligibility starts at
-  approval, not disbursement, since the trade category is already decided by then; no
-  reason to make someone wait on a banking delay. `trade_category_id` is populated from a
-  **new field this module requires on the loan application** — the loan officer picks a
-  category (or "Not a business") at the same moment they record the loan's purpose; this
-  doesn't exist in Al-Khidmat's process today and needs saying out loud in the demo.
-  `trade_category_id is null` is what excludes a loan that doesn't lead to a business
-  (Liberation Loan and similar) — that beneficiary can log in but is never offered listing
-  creation. `defaulted` closes the gate AND deactivates any listing they already have
+  approval, not disbursement; no reason to make someone wait on a banking delay.
+  `trade_category_id` on the loan is populated from a **new field this module requires on
+  the loan application** — the loan officer picks a category (or "Not a business") at the
+  same moment they record the loan's purpose; this doesn't exist in Al-Khidmat's process
+  today and needs saying out loud in the demo. `trade_category_id is null` is what
+  excludes a loan that doesn't lead to a business (Liberation Loan and similar) — that
+  beneficiary can log in but is never offered listing creation.
+  **7 Sep 2026 — the loan's category is the GATE ONLY, not the listing's category.**
+  It used to be inherited straight onto the listing and never shown, which meant a
+  beneficiary whose real business differed from the loan-desk record (or anyone testing)
+  had a mis-filed listing with no way to correct it. Now `FULL_DRAFT_PROMPT` proposes a
+  category from the real 15, the review screen shows it pre-selected and changeable (same
+  as `role` / the seeking flags), and `save_listing()` validates the chosen name against
+  `trade_categories`. `create_listing.py`'s loan lookup is now just a boolean gate
+  (`has_qualifying_loan`). `defaulted` closes the gate AND deactivates any listing they already have
   (schema reference query J) — a reputational fact, not just a future-signup block. On top
   of this, `marketplace_invitations` auto-sends an SMS signup code the moment a qualifying
   loan is recorded — solves "nothing tells the person the app exists," but is a

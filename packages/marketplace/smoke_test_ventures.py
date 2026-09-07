@@ -34,6 +34,7 @@ def main():
     draft = enrich_listing_text(amina_bid, "سلائی اور چمڑے کی مشترکہ دکان")  # combined tailoring+leather shop
     venture_id = save_listing(
         beneficiary_id=amina_bid,
+        trade_category="Manufacturing",
         role="producer",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],

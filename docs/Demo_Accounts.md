@@ -7,8 +7,13 @@ with that script's `DEMO_ACCOUNTS` list.
 Every account is a **real `microfinance_loans` row**, so it works with the
 real eligibility gate (`SKIP_ELIGIBILITY_CHECK=false`). None have a listing
 yet — the demo is *log in → create a listing → watch matching run*, not
-"look at one that already exists". The trade category is fixed per number
-(decided at "loan time"); describe a business that fits it.
+"look at one that already exists".
+
+**Since 7 Sep 2026 you pick the trade category IN the listing flow** — the
+loan just gates access. The "Category" column below is only the loan's
+category (what the number is seeded with); describe any business you like
+and choose its category on the review screen. Each number is still in a
+different loan category so the seeded set stays varied.
 
 ## Setup
 

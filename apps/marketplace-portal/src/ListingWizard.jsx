@@ -35,7 +35,21 @@ const SEEKING_OPTIONS = [
   ["work", "Work for myself", "مجھے کام چاہیے"],
 ];
 
-export default function ListingWizard({ token, onDone }) {
+// Fallback only -- the live list comes from GET /me/context
+// (context.trade_categories). Kept in sync with the trade_categories
+// table / packages/data/reference_lists.md.
+const TRADE_CATEGORIES_FALLBACK = [
+  "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery", "Livestock",
+  "Manufacturing", "Services", "Food", "Three-wheeler / rickshaw", "Agriculture",
+  "Freelancing / technology", "Handicrafts & Artisan Crafts",
+  "Construction & Home Trades", "Beauty & Personal Care", "Repair & Maintenance",
+  "Education & Tutoring",
+];
+
+export default function ListingWizard({ token, context, onDone }) {
+  const categories = context?.trade_categories?.length
+    ? context.trade_categories
+    : TRADE_CATEGORIES_FALLBACK;
   const [step, setStep] = useState(1);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -52,6 +66,7 @@ export default function ListingWizard({ token, onDone }) {
   const [draft, setDraft] = useState(null);
 
   // Editable, seeded from the AI draft once it comes back (see handleDraft)
+  const [tradeCategory, setTradeCategory] = useState("");
   const [role, setRole] = useState(null);
   const [seeking, setSeeking] = useState({ inputs: false, workers: false, partner: false, work: false });
   const [businessName, setBusinessName] = useState("");
@@ -119,6 +134,9 @@ export default function ListingWizard({ token, onDone }) {
       setDraft(result);
       // Seed the editable fields from the draft -- visible and
       // overridable, never silently trusted.
+      setTradeCategory(
+        categories.includes(result.trade_category) ? result.trade_category : ""
+      );
       setRole(result.role);
       setSeeking({
         inputs: !!result.seeking_inputs,
@@ -143,6 +161,7 @@ export default function ListingWizard({ token, onDone }) {
     setSaving(true);
     try {
       const result = await saveListing(token, {
+        trade_category: tradeCategory,
         role,
         product_or_service_en: draft.product_or_service_en,
         product_or_service_original: draft.product_or_service_original,
@@ -263,6 +282,20 @@ export default function ListingWizard({ token, onDone }) {
                 This same question serves both cases now, without needing
                 to change depending on what's checked below. */}
             <label className="field-label">
+              Trade category <span className="ur" style={{ fontWeight: 400 }}>کاروبار کی قسم</span>
+            </label>
+            <select
+              className="input"
+              value={tradeCategory}
+              onChange={(e) => setTradeCategory(e.target.value)}
+            >
+              <option value="">Choose a category...</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
+            <label className="field-label" style={{ marginTop: 16 }}>
               What best describes what you do? <span className="ur" style={{ fontWeight: 400 }}>آپ کیا کرتے ہیں؟</span>
             </label>
             <div className="chip-row">
@@ -401,7 +434,7 @@ export default function ListingWizard({ token, onDone }) {
             <button className="btn btn-secondary" onClick={() => setStep(1)}>
               Back <span style={{ fontFamily: "var(--font-ur)" }}>پیچھے</span>
             </button>
-            <button className="btn btn-accent" disabled={!role || !anySeekingSelected} onClick={handleSave}>
+            <button className="btn btn-accent" disabled={!tradeCategory || !role || !anySeekingSelected} onClick={handleSave}>
               Confirm & Create Listing
             </button>
           </div>
