@@ -129,10 +129,15 @@ Embeddings dimension is no longer on this list — resolved, see Resolved below.
    questions and surfaces passages, on demand. Also now explicitly owns the one-off
    criteria-document LLM extraction step (drafts `hard_rules`/`soft_signals` JSON for
    admin confirmation).
-6. **Workflow/Trigger Layer** (LlamaIndex Workflows) — 7 event triggers + 2 scheduled
-   jobs (bi-weekly ranking cycle; daily marketplace expiry sweep), cross-cutting,
-   ownership split across roles (see trigger table in
-   [Team_Work_Division.md](docs/Team_Work_Division.md)).
+6. **Workflow/Trigger Layer** — 7 event triggers + 2 scheduled jobs (bi-weekly ranking
+   cycle; daily marketplace expiry sweep), cross-cutting, ownership split across roles
+   (see trigger table in [Team_Work_Division.md](docs/Team_Work_Division.md)).
+   **No workflow engine (7 Sep 2026):** LlamaIndex Workflows was the plan, but it
+   orchestrates multi-step LLM agents and every trigger here is one deterministic function
+   call — same reasoning as "No agent framework anywhere" below. So `workflows/` is thin:
+   `triggers.py` is the authoritative registry (each trigger's job + the exact module it
+   lives in), events fire inline in their API request, and the two scheduled jobs run from
+   `python -m workflows.run` on Render cron (`render.yaml`).
 7. **Conversational Assistant** (Groq + shared RAG, P4) — on-demand, staff-facing, not a
    trigger. Answers "does this person qualify for anything else" / "what documents does
    this program need," always with a citation.
@@ -366,7 +371,7 @@ RAG service. If it slips, two people stall.
 | Embeddings | `sentence-transformers`, local, CPU — `BAAI/bge-base-en-v1.5`, 768-dim (matches schema) |
 | DB + vectors | Supabase Postgres + pgvector |
 | RAG | LlamaIndex over pgvector |
-| Triggers | LlamaIndex Workflows (typed, event-driven steps) |
+| Triggers | Inline function calls in the API request (events 1–7); `python -m workflows.run` on Render cron (scheduled 8, 9). No workflow engine — see component 6. |
 | API | FastAPI + Pydantic v2 (P3 owns) |
 | Auth — staff | Supabase Auth, email + password (P3 owns) |
 | Auth — marketplace | Phone + SMS one-time code, no password (P3: schema/OTP; me: app flow) |
@@ -470,11 +475,15 @@ needed.
    listing-creation flow specifically.
 2. ~~Embeddings dimension~~ — **resolved**, see Resolved above (768-dim,
    `BAAI/bge-base-en-v1.5`).
-3. **Trigger execution model — sync or async?** Still unanswered. Registration-time
-   discovery scoring plausibly runs inline (it's milliseconds, deterministic). But
-   triggers 5/6 re-scan *all* beneficiaries when a program changes — that can't
-   reasonably block an admin's HTTP request, and no queue/worker infra is named anywhere
-   for a single Render free-tier service.
+3. ~~Trigger execution model — sync or async?~~ — **settled for the hackathon, 7 Sep 2026.**
+   Events (triggers 1–7) run **inline**, inside the API request that causes them —
+   including the 5/6 re-scans, because there is no queue/worker infra on a single Render
+   free-tier service and a re-scan over the hackathon-scale caseload is still fast. The two
+   scheduled jobs (8 bi-weekly ranking, 9 daily marketplace sweep) run from `workflows/`
+   (`python -m workflows.run …`) on **Render cron** — see `render.yaml` and
+   `workflows/triggers.py` (the authoritative registry: what each trigger does, how it
+   fires, and the exact module it lives in). If 5/6 ever get slow in production, the fix is
+   to move them onto the same cron path; the logic doesn't change.
 4. ~~The seven program domains are still never listed.~~ — **resolved 7 Sep 2026.**
    Anchored to Al-Khidmat's seven real areas of work
    (alkhidmat.org/donations/area-of-work): **disaster management, health services,
@@ -522,13 +531,14 @@ needed.
 apps/main-portal/            Person 4 — React + Vite, staff-facing
 apps/marketplace-portal/     Me       — React + Vite, beneficiary-facing, phone+OTP login
 services/api/                Person 3 — FastAPI, two auth flows, shared by both apps
-packages/rag/                Me       — shared RAG layer + criteria extraction (build first, day one)
+packages/rag/                Me       — RAG layer + the one-off criteria LLM draft (rag/criteria.py: draft_hard_rules)
 packages/marketplace/        Me       — 3 business models, matching, no fees
 packages/eligibility/        Person 1 — discovery engine + prioritization rubric
-packages/dedup/              Person 3 — CNIC-first, then RapidFuzz duplicate detection
+packages/dedup/              Person 3 — CNIC-first, then RapidFuzz (dedup/matching.py, framework-free; services/api reads the rows)
 packages/data/                Data Eng role — schema (delivered, packages/data/schema/), synthetic data, features
-packages/nlp_assistant/       Person 4 — free-text parsing + conversational assistant
-workflows/                    Cross-cutting — LlamaIndex Workflow trigger definitions
+packages/nlp_assistant/       Person 4 — free-text parsing + conversational assistant (deleted; the staff assistant lives in services/api/app/portal/assistant.py)
+workflows/                    Cross-cutting — the 9-trigger registry (triggers.py) + the 2 scheduled jobs (scheduled.py, run via `python -m workflows.run`); no engine
+render.yaml                   Render blueprint — the one API web service + the trigger 8 / trigger 9 cron jobs
 docs/                          SRS.md, Architecture.md, Team_Work_Division.md, Eligibility_Flow_Explained.md, End_to_End_Flows.md, Marketplace_Spec.md
 ```
 

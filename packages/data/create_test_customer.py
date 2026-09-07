@@ -149,25 +149,25 @@ def run(phone: str, full_name: str, district: str, cluster_id: str, category: st
     category_id_set = bool(category)
     print(f"\nCreated beneficiary {beneficiary_id}")
     print(f"Created loan {loan_id} (status={status}, category={category or 'none -- no business'})")
-    print(f"\n--- Test the real (non-bypassed) login gate ---")
-    print(f"Set SKIP_ELIGIBILITY_CHECK=false in .env, restart the API server, then log in with:")
+    print("\n--- Test the real (non-bypassed) login gate ---")
+    print("Set SKIP_ELIGIBILITY_CHECK=false in .env, restart the API server, then log in with:")
     print(f"  phone: {phone}")
     if status not in ("approved", "disbursed") or not category_id_set:
         print(f"  (this one is EXPECTED to fail the gate -- status={status}, "
               f"category={'set' if category_id_set else 'none'})")
 
     key = os.environ.get("INTERNAL_API_KEY", "<INTERNAL_API_KEY from .env>")
-    print(f"\n--- Test the loan-approved webhook (marketplace_invitations SMS) LIVE ---")
-    print(f"With the API server running (port 8000 or wherever yours is):")
-    print(f'  curl -X POST http://localhost:8000/webhooks/loan-approved \\')
+    print("\n--- Test the loan-approved webhook (marketplace_invitations SMS) LIVE ---")
+    print("With the API server running (port 8000 or wherever yours is):")
+    print('  curl -X POST http://localhost:8000/webhooks/loan-approved \\')
     print(f'    -H "X-Internal-Key: {key}" -H "Content-Type: application/json" \\')
     print(f'    -d \'{{"loan_id": "{loan_id}"}}\'')
     print(f"Watch the server's terminal -- a real marketplace_invitations row gets written, "
           f"and the (stand-in) SMS print shows the invitation code for {phone}.")
 
     if status == "disbursed":
-        print(f"\n--- Test the loan-repaid webhook (zakat graduation trigger) LIVE ---")
-        print(f'  curl -X POST http://localhost:8000/webhooks/loan-repaid \\')
+        print("\n--- Test the loan-repaid webhook (zakat graduation trigger) LIVE ---")
+        print('  curl -X POST http://localhost:8000/webhooks/loan-repaid \\')
         print(f'    -H "X-Internal-Key: {key}" -H "Content-Type: application/json" \\')
         print(f'    -d \'{{"loan_id": "{loan_id}"}}\'')
 

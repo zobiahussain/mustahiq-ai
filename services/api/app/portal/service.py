@@ -7,9 +7,9 @@ from uuid import uuid4
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import and_, select
-from rapidfuzz import fuzz
 
 from app.core.config import REPO_ROOT
+from dedup import compare as dedup_compare
 from eligibility.discovery import DiscoveryProgram, discover_profile
 from eligibility.models import BeneficiaryProfile
 from eligibility.persistence import load_scorer
@@ -141,19 +141,25 @@ def discover(db, profile, program_list=None):
 
 
 def detect_duplicates(db, profile):
+    """Trigger 2. The comparison itself lives in packages/dedup (framework-free,
+    reused by the Supabase router too); this only owns reading candidate rows
+    and writing pending flags. Exact-CNIC collisions are already rejected at
+    profile creation, so in practice every flag here is name/phone fuzzy."""
     for candidate in rows(db, t.profiles):
         if str(candidate['id']) == str(profile['id']):
             continue
-        score = max(fuzz.token_sort_ratio(profile['full_name'], candidate['full_name']),
-                    fuzz.ratio(profile['phone'], candidate['phone']) if profile.get('phone') and candidate.get('phone') else 0)
-        if score < 85:
+        signal = dedup_compare(
+            name_a=profile['full_name'], phone_a=profile.get('phone'), cnic_a=profile.get('cnic'),
+            name_b=candidate['full_name'], phone_b=candidate.get('phone'), cnic_b=candidate.get('cnic'),
+        )
+        if signal is None:
             continue
         existing = db.execute(select(t.duplicates.c.id).where(
             ((t.duplicates.c.profile_a_id == str(profile['id'])) & (t.duplicates.c.profile_b_id == str(candidate['id']))) |
             ((t.duplicates.c.profile_b_id == str(profile['id'])) & (t.duplicates.c.profile_a_id == str(candidate['id']))))).first()
         if not existing:
             insert(db, t.duplicates, profile_a_id=str(profile['id']), profile_b_id=str(candidate['id']),
-                   similarity_score=score, matched_on='name_phone_fuzzy', status='pending', created_at=now())
+                   similarity_score=signal.score, matched_on=signal.matched_on, status='pending', created_at=now())
 
 
 def review_match(db, staff, match_id, body):
@@ -310,3 +316,73 @@ def finalise_cycle(db, staff, cycle_id):
             values['cycles_waited'] = (app['cycles_waited'] or 0) + 1
         update(db, t.applications, app['id'], **values)
     return update(db, t.cycles, cycle_id, status='finalised', approved_count=len(approved), disbursed_count=len(approved), reviewed_by_staff_id=str(staff['id']))
+
+
+# --- Scheduled trigger 8: the bi-weekly ranking cycle -------------------------
+# The existing run_cycle() is a single manual per-program action. Trigger 8 is
+# the "day it's due, rank the pool" job: it finds every active program whose
+# cycle is due, runs run_cycle() for each, and STOPS THERE -- the cycle lands
+# at status='ranked' for a human to review and allocate. It never approves or
+# disburses (SRS: never auto-enroll). Called from packages/workflows (Render
+# cron) and, for the demo, POST /portal/cycles/run-due.
+
+SYSTEM_ACTOR_EMAIL = 'scheduler@mustahiq.local'
+
+
+def system_actor(db):
+    """A dedicated super_admin staff row the scheduled job acts as, so the
+    audit trail reads 'Scheduled ranking job', not a person who was not there.
+    Created on first use; harmless in SQLite demo and Supabase alike."""
+    existing = db.execute(select(t.staff_users).where(t.staff_users.c.email == SYSTEM_ACTOR_EMAIL)).mappings().first()
+    if existing:
+        return dict(existing)
+    return insert(db, t.staff_users, full_name='Scheduled ranking job', email=SYSTEM_ACTOR_EMAIL,
+                  role='super_admin', department_id=None, auth_user_id=None, active=True, created_at=now())
+
+
+def _latest_cycle_run_at(db, program_id):
+    return db.execute(
+        select(t.cycles.c.run_at).where(t.cycles.c.program_id == str(program_id)).order_by(t.cycles.c.run_at.desc())
+    ).scalars().first()
+
+
+def _cycle_is_due(db, program):
+    if not program['active']:
+        return False
+    if db.execute(select(t.cycles.c.id).where(t.cycles.c.program_id == str(program['id']), t.cycles.c.status != 'finalised')).first():
+        return False  # a human still owes this program a review; don't stack cycles
+    last = _latest_cycle_run_at(db, program['id'])
+    if last is None:
+        return True
+    last_dt = last if isinstance(last, datetime) else datetime.fromisoformat(str(last))
+    if last_dt.tzinfo is None:
+        last_dt = last_dt.replace(tzinfo=timezone.utc)
+    return now() - last_dt >= timedelta(days=program['cycle_frequency_days'] or 14)
+
+
+def _has_verified_pool(db, program_id):
+    return any(
+        str(a['program_id']) == str(program_id) and a['status'] in ('active', 'rolled_over') and a['verification_id']
+        for a in rows(db, t.applications)
+    )
+
+
+def run_due_cycles(db, *, actor=None):
+    """Trigger 8. Rank every program whose cycle is due. Returns a per-program
+    summary suitable for a cron log line."""
+    actor = actor or system_actor(db)
+    ran, skipped = [], []
+    for program in rows(db, t.programs):
+        if not _cycle_is_due(db, program):
+            continue
+        if not _has_verified_pool(db, program['id']):
+            skipped.append({'program_id': str(program['id']), 'name': program['name'], 'reason': 'no verified candidates waiting'})
+            continue
+        try:
+            result = run_cycle(db, actor, program['id'])
+        except HTTPException as error:
+            skipped.append({'program_id': str(program['id']), 'name': program['name'], 'reason': str(error.detail)})
+            continue
+        ran.append({'program_id': str(program['id']), 'name': program['name'], 'cycle_id': str(result['id']),
+                    'pool_size': result['pool_size'], 'expired_count': result['expired_count']})
+    return {'ran': ran, 'skipped': skipped}
