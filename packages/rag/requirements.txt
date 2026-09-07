@@ -2,3 +2,5 @@ sentence-transformers>=3.0
 psycopg2-binary>=2.9
 python-dotenv>=1.0
 groq>=0.11
+requests>=2.31          # groq_client.py's LLM_PROVIDER=ollama dev-toggle -- talks
+                        # to a local Ollama REST endpoint, not the Groq SDK
