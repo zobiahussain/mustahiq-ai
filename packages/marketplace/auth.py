@@ -83,7 +83,7 @@ import uuid
 import psycopg2
 from dotenv import load_dotenv
 
-from proximity import PROVINCE_BY_DISTRICT
+from proximity import PROVINCE_BY_DISTRICT, cluster_for
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
@@ -149,20 +149,14 @@ def _auto_provision_test_beneficiary(
                 f"'{district}' isn't a recognised Pakistani district -- see "
                 "packages/marketplace/proximity.py's PROVINCE_BY_DISTRICT for the full list"
             )
-        # Simple "first three letters" cluster convention -- same one
-        # generate_seed_data.py's curated district list uses, though that
-        # list assigns them by hand; this derives one on the fly so any
-        # of Pakistan's ~160 districts works here, not just the ~42
-        # that script chose to seed. Good enough for a testing
-        # convenience: what matters is that the SAME district always
-        # derives the SAME cluster_id, so two test beneficiaries in
-        # "Multan" land in the same cluster and matching behaves
-        # sensibly -- it doesn't need to match Al-Khidmat's real cluster
-        # boundaries (nothing in this codebase has those; see
-        # proximity.py's own docstring).
-        cluster_id = f"{district[:3].upper()}-01"
+        # ONE canonical district -> cluster map (proximity.cluster_for),
+        # shared with the seed generators -- so a test beneficiary in
+        # "Lahore" gets LHR-01 and actually shares a cluster with the
+        # seeded Lahore listings, instead of the old first-3-letters
+        # guess landing them in a lonely "LAH-01".
+        cluster_id = cluster_for(district)
     else:
-        district, cluster_id = "Lahore", "LHR-01"
+        district, cluster_id = "Lahore", cluster_for("Lahore")
 
     cur.execute(
         "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) "
