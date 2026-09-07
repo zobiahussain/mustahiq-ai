@@ -69,8 +69,8 @@ AL-KHIDMAT STAFF                        BENEFICIARIES
   - department admin CONFIRMS before it takes effect
         |
         v
-[ WORKFLOW LAYER ]            LlamaIndex Workflows
-  - 8 event triggers + 1 scheduled sweep
+[ TRIGGER LAYER ]             inline events + 2 cron jobs (no engine)
+  - 7 event triggers + 2 scheduled jobs (bi-weekly ranking; daily sweep)
   - ALL output lands in the review worklist,
     never delivered to a beneficiary directly
         |
@@ -114,7 +114,7 @@ matching. Both draw on the same retrieval layer and the same database.
 | Embeddings | Groq embeddings endpoint *(see note above — unconfirmed)* | You |
 | Database + vector store | Supabase — Postgres with the pgvector extension | Person 3, You |
 | RAG framework | LlamaIndex over pgvector | You |
-| Trigger layer | LlamaIndex Workflows — event-driven, typed steps | You, Person 1, Person 3 |
+| Trigger layer | Inline function calls (events) + Render cron (scheduled jobs) — no engine, see workflows/ | You, Person 1, Person 3 |
 | Duplicate detection | RapidFuzz | Person 3 |
 | Backend / API | FastAPI + Pydantic v2 | Person 3 |
 | Backend hosting | Render | Person 3 |
@@ -468,7 +468,7 @@ enforce it in application code.
 | 1 | Staff enters a beneficiary's profile in conversation | Main Platform Portal → POST /profile | Portal + Backend |
 | 2 | Free-text input is parsed into structured fields | Groq JSON-mode completion | NLP role |
 | 3 | Profile is written to Supabase | Structured insert, no embedding | Backend, Data |
-| 4 | Registration event fires the workflow layer | LlamaIndex Workflow | Workflow owners |
+| 4 | Registration fires discovery inline in the request | plain function call | Discovery engine owner |
 | 5 | Eligibility scoring runs against every active program | Rules + XGBoost; retrieval where criteria are document-based | Eligibility Engine |
 | 6 | Duplicate check runs | RapidFuzz on identity fields | Backend role |
 | 7 | (Marketplace, separate module) a listing is created and matched | Filtered pgvector query over store_listings | Marketplace |

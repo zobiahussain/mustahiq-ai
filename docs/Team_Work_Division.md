@@ -37,7 +37,7 @@ websites; retrieval runs only over uploaded or mock documents prepared for the d
 | Embeddings | Groq embeddings endpoint *(unconfirmed — see CLAUDE.md)* | You |
 | Database + vector store | Supabase — Postgres with the pgvector extension | Person 3, You |
 | RAG framework | LlamaIndex over pgvector | You |
-| Trigger layer | LlamaIndex Workflows — event-driven, typed steps | You, Person 1, Person 3 |
+| Trigger layer | Inline function calls (events) + Render cron (scheduled jobs) — no engine, see workflows/ | You, Person 1, Person 3 |
 | Duplicate detection | RapidFuzz | Person 3 |
 | Backend / API | FastAPI + Pydantic v2 | Person 3 |
 | Backend hosting | Render | Person 3 |
@@ -128,7 +128,7 @@ since expiry is time-based and no event can cover it. Both run as scheduled jobs
   other roles build against it.
 - Generate the dummy applicant and store-listing profiles needed to demo marketplace
   matching.
-- Build the marketplace trigger as a LlamaIndex Workflow — fires on a new or updated
+- Build the marketplace trigger (fires inline on a new or updated
   listing, scans the pool, notifies both sides directly by SMS and email. No staff step —
   see the Marketplace App access model in Architecture.md §4.2.
 - Own the scheduled daily sweep (trigger 9) as a Render cron job — expires unanswered

@@ -1,57 +1,91 @@
 # Mustahiq AI
 
-AI-powered unified beneficiary matching & allocation platform for Al-Khidmat, built for
-the Alibaba × GitHub × X hackathon. Staff-operated case management: AI discovers who may
-qualify, staff verify real need, a transparent rubric prioritizes limited resources. A
-separate, fee-free marketplace connects microfinance beneficiaries to each other.
+A decision-support layer for Al-Khidmat Foundation's beneficiary aid — built for the
+first **Alibaba Cloud AI Hackathon in Pakistan**, hosted by Al-Khidmat Foundation.
 
-Full requirements, architecture, and role breakdown are in [docs/](docs):
+Al-Khidmat runs many programmes with limited budgets. The hard part isn't wanting to
+help — it's deciding *who, among everyone eligible, needs help most*, and being able to
+explain the decision. Mustahiq AI sits on top of that process:
 
-- [docs/SRS.md](docs/SRS.md) — what we're building and why
-- [docs/Architecture.md](docs/Architecture.md) — system design, data model, deployment
-- [docs/Team_Work_Division.md](docs/Team_Work_Division.md) — who owns what
-- [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md) — where the
-  LLM runs vs. XGBoost vs. rules vs. RAG, and why
-- [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md) — all 11 use cases traced step by
-  step
-- [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md) — full marketplace module spec
+- **Eligibility (staff-operated).** A field officer enters a household's situation in
+  conversation. The system checks it against every active programme across Al-Khidmat's
+  seven areas of work — health, education, disaster relief, clean water, orphan care,
+  BanoQabil, community services — using plain hard rules plus an XGBoost confidence score.
+  Suggestions go to a staff worklist, never an automatic enrolment. Staff pool a case,
+  verify real need on a home visit, and a bi-weekly cycle ranks everyone waiting on one
+  transparent, factor-by-factor rubric. How someone was found can never affect their rank.
+- **Marketplace (beneficiary-facing, no fees).** Once a beneficiary has a business loan,
+  they open a phone app, describe their business by voice in any language, and are matched
+  to nearby suppliers, customers, workers or business partners. Al-Khidmat only introduces.
 
-See the root [CLAUDE.md](CLAUDE.md) for open questions and doc-set contradictions still
-needing a team decision before these are fully locked.
+## Run the eligibility demo (no database, no secrets)
+
+The staff portal runs entirely on an isolated SQLite database seeded with **synthetic
+data** — no Supabase, no API keys, no LLM provider.
+
+```powershell
+# terminal 1 — API
+cd services/api
+$env:PORTAL_DEMO_MODE='true'; $env:STAFF_GENERATION_ENABLED='false'; $env:SUPPORT_CHAT_USE_LLM='false'
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001      # first start seeds ~180 profiles
+
+# terminal 2 — frontend
+cd apps/main-portal
+npm install && npm run dev
+```
+
+Open **http://127.0.0.1:5174** → *Enter the workspace*, then walk the pipeline: register a
+beneficiary → *Discovery review* → *Outreach & verification* → *Ranking & allocation*.
+
+The marketplace app (`apps/marketplace-portal` + `services/api/main.py`) additionally needs
+a Postgres + pgvector database via `DATABASE_URL` — see `.env.example` and
+`docs/Local_Setup_And_Testing.md`.
 
 ## Repo layout
 
-One monorepo, folders split by ownership so five people can work without stepping on each
-other. Each has its own `README.md` naming the owning role and what it depends on.
+One monorepo, folders split by ownership so five people can work in parallel. Each folder
+has its own `README.md` naming the owning role.
 
 ```
 apps/
-  main-portal/          Main Platform Portal (React + Vite, staff-facing) — NLP/Assistant/Portal role
-  marketplace-portal/   Marketplace app (React + Vite, beneficiary-facing) — Marketplace/RAG role
-
+  main-portal/          Staff portal (React + Vite)
+  marketplace-portal/   Marketplace app (React + Vite, phone + SMS-code login)
 services/
-  api/                  FastAPI backend both apps call, staff auth — Backend & Integration role
-
-packages/                 Python packages imported by services/api
-  rag/                   Shared RAG layer + criteria extraction — Marketplace/RAG role
-  marketplace/           3 business models, matching, no fees — Marketplace/RAG role
-  eligibility/           Discovery engine + prioritization rubric — Eligibility Engine role
-  dedup/                 Duplicate detection (CNIC-first, RapidFuzz) — Backend & Integration role
-  data/                  Supabase schema (delivered, schema/), synthetic datasets, features — Data Engineering role
-  nlp_assistant/         Free-text parsing + conversational assistant — NLP/Assistant/Portal role
-
-workflows/               LlamaIndex Workflow trigger definitions (cross-cutting, multiple owners)
-
-docs/                    SRS, Architecture, Team Work Division, Eligibility Flow, End-to-End Flows, Marketplace Spec
+  api/                  FastAPI — staff routes under /portal (app/), marketplace API (main.py)
+packages/
+  eligibility/          Hard-rule engine + XGBoost confidence + prioritisation rubric
+  marketplace/          3 matching models, proximity re-weighting, logistics, no fees
+  rag/                  Embeddings + retrieval + Groq wrapper + the one-off criteria LLM draft
+  dedup/                CNIC-first, then RapidFuzz name/phone comparison
+  data/                 SQL schema, synthetic data generator, the 57-feature contract
+workflows/              The 9-trigger registry + the 2 scheduled jobs (python -m workflows.run)
+render.yaml             Render blueprint — the API service + the two cron jobs
+docs/                   SRS, Architecture, flows, marketplace spec, setup & testing
 ```
 
-Build order (see [Team_Work_Division.md §6](docs/Team_Work_Division.md#6-build-order)):
-`packages/data` schema (delivered) → `packages/rag` → `packages/eligibility` +
-`packages/marketplace` in parallel → `services/api` → both `apps/` → `workflows/` wiring
-last.
+## How the AI is used
+
+- **Eligibility scoring:** deterministic rules + an XGBoost model trained on 15,000
+  synthetic profiles (~54,000 labelled rows, held-out ROC-AUC ≈ 0.76). **No LLM anywhere
+  in the scoring path.** The score is a suggestion shown as low / medium / high; it never
+  decides funding — the transparent rubric does that, and a human allocates.
+- **LLM (Groq), used sparingly:** drafting structured rules from a criteria document once
+  at upload (a human confirms), parsing a spoken marketplace listing, writing a match
+  reason, and answering staff reference questions — always with a citation.
+- **Embeddings:** local `sentence-transformers` on CPU (`BAAI/bge-base-en-v1.5`, 768-dim).
 
 ## Stack
 
-Python 3.11+, Groq API (generation only), local `sentence-transformers` embeddings,
-Supabase Postgres + pgvector, LlamaIndex, FastAPI + Pydantic v2, Supabase Auth
-(staff-only), React + Vite, Render (hosting + cron). Everything on free tiers, no GPU.
+Python 3.11+ · FastAPI + Pydantic v2 · Supabase Postgres + pgvector · Groq (generation
+only) · React + Vite · Render (hosting + cron). Free tiers throughout, no GPU.
+
+## Tests
+
+```powershell
+python -m pytest packages/eligibility/tests packages/dedup/tests workflows/tests services/api/tests/test_rubric.py
+python -m pytest services/api/tests/test_staff_workflow.py    # slower: re-seeds per test
+cd apps/main-portal && npm test
+```
+
+Full requirements, architecture and the trigger model are in [`docs/`](docs). `CLAUDE.md`
+carries the working notes and the few remaining team decisions.
