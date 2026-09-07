@@ -1,57 +1,41 @@
 # Mustahiq AI
 
-AI-powered unified beneficiary matching & allocation platform for Al-Khidmat, built for
-the Alibaba × GitHub × X hackathon. Staff-operated case management: AI discovers who may
-qualify, staff verify real need, a transparent rubric prioritizes limited resources. A
-separate, fee-free marketplace connects microfinance beneficiaries to each other.
+AI-powered unified beneficiary matching and allocation platform for Al-Khidmat, built for the Alibaba x GitHub x X hackathon. Staff-operated case management discovers who may qualify, staff verify real need, and a transparent rubric prioritizes limited resources. A separate, fee-free marketplace connects microfinance beneficiaries to each other.
 
 Full requirements, architecture, and role breakdown are in [docs/](docs):
 
-- [docs/SRS.md](docs/SRS.md) — what we're building and why
-- [docs/Architecture.md](docs/Architecture.md) — system design, data model, deployment
-- [docs/Team_Work_Division.md](docs/Team_Work_Division.md) — who owns what
-- [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md) — where the
-  LLM runs vs. XGBoost vs. rules vs. RAG, and why
-- [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md) — all 11 use cases traced step by
-  step
-- [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md) — full marketplace module spec
+- [docs/SRS.md](docs/SRS.md) - what we're building and why
+- [docs/Architecture.md](docs/Architecture.md) - system design, data model, deployment
+- [docs/Team_Work_Division.md](docs/Team_Work_Division.md) - who owns what
+- [docs/Eligibility_Flow_Explained.md](docs/Eligibility_Flow_Explained.md) - where the LLM runs vs. XGBoost vs. rules vs. RAG, and why
+- [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md) - all use cases traced step by step
+- [docs/Marketplace_Spec.md](docs/Marketplace_Spec.md) - full marketplace module spec
+- [docs/Staff_Portal_Integration.md](docs/Staff_Portal_Integration.md) - how to run, configure, and verify the implemented staff portal
 
-See the root [CLAUDE.md](CLAUDE.md) for open questions and doc-set contradictions still
-needing a team decision before these are fully locked.
+## Repo Layout
 
-## Repo layout
-
-One monorepo, folders split by ownership so five people can work without stepping on each
-other. Each has its own `README.md` naming the owning role and what it depends on.
-
-```
+```text
 apps/
-  main-portal/          Main Platform Portal (React + Vite, staff-facing) — NLP/Assistant/Portal role
-  marketplace-portal/   Marketplace app (React + Vite, beneficiary-facing) — Marketplace/RAG role
+  main-portal/          Main Platform Portal (React + Vite, staff-facing)
+  marketplace-portal/   Marketplace app (React + Vite, beneficiary-facing)
 
 services/
-  api/                  FastAPI backend both apps call, staff auth — Backend & Integration role
+  api/                  FastAPI backend both apps call
 
-packages/                 Python packages imported by services/api
-  rag/                   Shared RAG layer + criteria extraction — Marketplace/RAG role
-  marketplace/           3 business models, matching, no fees — Marketplace/RAG role
-  eligibility/           Discovery engine + prioritization rubric — Eligibility Engine role
-  dedup/                 Duplicate detection (CNIC-first, RapidFuzz) — Backend & Integration role
-  data/                  Supabase schema (delivered, schema/), synthetic datasets, features — Data Engineering role
-  nlp_assistant/         Free-text parsing + conversational assistant — NLP/Assistant/Portal role
+packages/
+  rag/                  Shared RAG layer + criteria extraction
+  marketplace/          3 business models, matching, no fees
+  eligibility/          Discovery engine + prioritization rubric
+  dedup/                Duplicate detection helpers
+  data/                 Supabase schema, migrations, synthetic datasets, features
+  nlp_assistant/        Free-text parsing + conversational assistant
 
-workflows/               LlamaIndex Workflow trigger definitions (cross-cutting, multiple owners)
-
-docs/                    SRS, Architecture, Team Work Division, Eligibility Flow, End-to-End Flows, Marketplace Spec
+docs/                   SRS, architecture, flows, marketplace spec, staff portal runbook
+workflows/              Workflow trigger definitions
 ```
 
-Build order (see [Team_Work_Division.md §6](docs/Team_Work_Division.md#6-build-order)):
-`packages/data` schema (delivered) → `packages/rag` → `packages/eligibility` +
-`packages/marketplace` in parallel → `services/api` → both `apps/` → `workflows/` wiring
-last.
+The staff portal can be run locally in demo mode without Supabase credentials. See [docs/Staff_Portal_Integration.md](docs/Staff_Portal_Integration.md).
 
 ## Stack
 
-Python 3.11+, Groq API (generation only), local `sentence-transformers` embeddings,
-Supabase Postgres + pgvector, LlamaIndex, FastAPI + Pydantic v2, Supabase Auth
-(staff-only), React + Vite, Render (hosting + cron). Everything on free tiers, no GPU.
+Python 3.11+, FastAPI + Pydantic v2, Supabase Postgres/Auth, pgvector, React + Vite, saved eligibility scorer, optional Groq/Ollama generation, and local `sentence-transformers` embeddings for live RAG retrieval.

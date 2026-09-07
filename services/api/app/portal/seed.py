@@ -19,6 +19,8 @@ def seed_demo():
     t.metadata.create_all(engine)
     with SessionLocal() as db:
         if db.execute(select(t.staff_users.c.id)).first():
+            db.execute(t.staff_users.update().where(t.staff_users.c.email == 'demo@mustahiq.local').values(full_name='Rayan'))
+            db.commit()
             return
         specs = [
             ('Education Support', 'education', 'school_age_children', '>=', 1, 'At least one school-age child', 150000, 6),
@@ -41,7 +43,7 @@ def seed_demo():
             s.insert(db, t.criteria, program_id=demo_id(name), chunk_index=0, created_at=s.now(),
                 chunk_text=f'SYNTHETIC DEMO POLICY — {name}. Household income must be at or below PKR 35,000. {description}. Documents required: CNIC or B-form, household income statement, and program-specific supporting records. Staff must verify actual need and confirm similar assistance has not already been received. Verification remains valid for 90 days. No automatic enrollment. These are fictional criteria for the hackathon.')
         staff_id = demo_id('staff')
-        db.execute(t.staff_users.insert().values(id=staff_id, full_name='Ayesha Khan', email='demo@mustahiq.local', role='super_admin', active=True, department_id=demo_id('education'), created_at=s.now()))
+        db.execute(t.staff_users.insert().values(id=staff_id, full_name='Rayan', email='demo@mustahiq.local', role='super_admin', active=True, department_id=demo_id('education'), created_at=s.now()))
         names = ['Fatima Bibi', 'Muhammad Aslam', 'Rukhsana Begum', 'Ali Hassan', 'Sadia Parveen', 'Abdul Rehman', 'Zainab Khalid', 'Usman Tariq', 'Nusrat Bibi', 'Hamza Ahmed', 'Amina Yousaf', 'Bilal Akhtar', 'Farzana Iqbal', 'Hassan Raza', 'Maryam Asif', 'Muhammad Aslam']
         for i, name in enumerate(names):
             profile = dict(id=demo_id('profile-' + str(i)), full_name=name, district=['Lahore', 'Multan', 'Sukkur'][i % 3],

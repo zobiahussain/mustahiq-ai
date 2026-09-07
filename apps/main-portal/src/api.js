@@ -36,3 +36,29 @@ export async function api(path, { method = 'GET', body, retry = true } = {}) {
   }
   return result;
 }
+
+export async function streamApi(path, { body, onEvent }) {
+  const response = await fetch(`${BASE}/portal${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok || !response.body) {
+    const result = await response.json().catch(() => ({ detail: 'The API returned an unreadable response.' }));
+    throw new Error(message(result));
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.trim()) onEvent(JSON.parse(line));
+    }
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer));
+}

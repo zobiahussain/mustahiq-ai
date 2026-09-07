@@ -1,5 +1,6 @@
 """Transactional staff workflow over the team's existing core tables."""
 from datetime import date, datetime, timedelta, timezone
+import json
 from functools import lru_cache
 from uuid import uuid4
 
@@ -49,6 +50,29 @@ def update(db, table, record_id, **values):
 def pair(db, table, beneficiary_id, program_id):
     row = db.execute(select(table).where(and_(table.c.beneficiary_id == str(beneficiary_id), table.c.program_id == str(program_id)))).mappings().first()
     return dict(row) if row else None
+
+
+def canonical_policy(program):
+    return json.dumps({
+        'active': bool(program['active']),
+        'hard_rules': (program['criteria_structured'] or {}).get('hard_rules', []),
+        'priority_weights': program['priority_weights'] or {},
+        'requires_explicit_application': bool(program['requires_explicit_application']),
+        'verification_valid_days': program['verification_valid_days'],
+    }, sort_keys=True, separators=(',', ':'))
+
+
+def expire_active_applications_for_policy_change(db, program_id):
+    expired = 0
+    for app in rows(db, t.applications):
+        if str(app['program_id']) != str(program_id) or app['status'] not in ('active', 'rolled_over'):
+            continue
+        update(db, t.applications, app['id'], status='expired', updated_at=now())
+        outreach = pair(db, t.pool, app['beneficiary_id'], program_id)
+        if outreach:
+            update(db, t.pool, outreach['id'], outreach_status='awaiting_outreach')
+        expired += 1
+    return expired
 
 
 def program_for(db, staff, program_id, lock=False):
@@ -246,11 +270,11 @@ def approve_candidate(db, staff, cycle_id, candidate_id, body):
         raise HTTPException(404, 'Candidate does not belong to this cycle.')
     app = get(db, t.applications, candidate['application_id'])
     verification = get(db, t.verifications, app['verification_id'])
-    if verification['valid_until'] < date.today():
+    if body.approved and verification['valid_until'] < date.today():
         raise HTTPException(409, 'Verification expired. Finalise without approving this candidate, then re-verify.')
     if body.approved and cycle['budget_available'] is not None and body.amount is None:
         raise HTTPException(422, 'Enter an allocation amount for this budgeted program.')
-    update(db, t.cycle_candidates, candidate_id, status='approved' if body.approved else 'ranked', amount=body.amount)
+    update(db, t.cycle_candidates, candidate_id, status='approved' if body.approved else 'ranked', amount=body.amount if body.approved else None)
     update(db, t.applications, app['id'], status='approved' if body.approved else 'ranked', updated_at=now())
     count = len([r for r in rows(db, t.cycle_candidates) if str(r['cycle_id']) == str(cycle_id) and r['status'] == 'approved'])
     update(db, t.cycles, cycle_id, status='under_review', approved_count=count, reviewed_by_staff_id=str(staff['id']))

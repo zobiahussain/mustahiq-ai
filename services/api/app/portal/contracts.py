@@ -142,3 +142,7 @@ class DocumentInput(Contract):
 class AssistantInput(Contract):
     question: str = Field(min_length=3, max_length=2000)
     program_id: UUID | None = None
+
+
+class SupportChatInput(Contract):
+    question: str = Field(min_length=3, max_length=1000)

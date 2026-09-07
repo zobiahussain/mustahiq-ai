@@ -2,6 +2,7 @@ import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -11,7 +12,7 @@ from eligibility.prioritization import DEFAULT_WEIGHTS, FACTOR_DEFINITIONS
 from . import tables as t
 from . import service as s
 from .auth import auth_request, current_staff, demo_token, require_admin, check_department
-from .contracts import Login, Refresh, ProfileInput, ProgramInput, Review, ApplicationInput, VerificationInput, Approval, DocumentInput, AssistantInput
+from .contracts import Login, Refresh, ProfileInput, ProgramInput, Review, ApplicationInput, VerificationInput, Approval, DocumentInput, AssistantInput, SupportChatInput
 
 router = APIRouter(prefix='/portal', tags=['staff portal'])
 
@@ -19,6 +20,47 @@ router = APIRouter(prefix='/portal', tags=['staff portal'])
 @router.get('/config')
 def config():
     return {'demo_mode': settings.portal_demo_mode, 'factor_definitions': FACTOR_DEFINITIONS, 'default_weights': DEFAULT_WEIGHTS}
+
+
+@router.get('/support/programs')
+def support_programs(db=Depends(get_db)):
+    programs = [p for p in s.rows(db, t.programs) if p['active']]
+    return {'programs': [{'id': str(p['id']), 'name': p['name'], 'domain': p['domain'], 'description': p['description'],
+                          'requires_explicit_application': p['requires_explicit_application']} for p in programs]}
+
+
+@router.post('/support/chat')
+def support_chat(body: SupportChatInput, db=Depends(get_db)):
+    from .assistant import answer_support_question
+    programs = [p for p in s.rows(db, t.programs) if p['active']]
+    program_ids = {str(p['id']) for p in programs}
+    chunks = [c for c in s.rows(db, t.criteria) if str(c['program_id']) in program_ids]
+    return answer_support_question(body.question, programs, chunks)
+
+
+@router.post('/support/chat/stream')
+def support_chat_stream(body: SupportChatInput, db=Depends(get_db)):
+    from .assistant import build_support_chat, stream_qwen, support_llm_enabled
+    programs = [p for p in s.rows(db, t.programs) if p['active']]
+    program_ids = {str(p['id']) for p in programs}
+    chunks = [c for c in s.rows(db, t.criteria) if str(c['program_id']) in program_ids]
+    active_programs, sources, fallback, prompt = build_support_chat(body.question, programs, chunks)
+
+    def events():
+        yield json.dumps({'type': 'meta', 'mode': 'support_stream', 'sources': sources}) + '\n'
+        if not prompt or not support_llm_enabled():
+            yield json.dumps({'type': 'token', 'text': fallback}) + '\n'
+            yield json.dumps({'type': 'done'}) + '\n'
+            return
+        try:
+            for token in stream_qwen(prompt, active_programs):
+                yield json.dumps({'type': 'token', 'text': token}) + '\n'
+            yield json.dumps({'type': 'done'}) + '\n'
+        except Exception:
+            yield json.dumps({'type': 'token', 'text': 'The support assistant is taking too long to respond. Please try a shorter question, or ask about a specific Alkhidmat program.'}) + '\n'
+            yield json.dumps({'type': 'done'}) + '\n'
+
+    return StreamingResponse(events(), media_type='application/x-ndjson')
 
 
 @router.post('/session')
@@ -160,16 +202,21 @@ def create_program(body: ProgramInput, db=Depends(get_db), staff=Depends(current
 @router.put('/programs/{program_id}')
 def edit_program(program_id: UUID, body: ProgramInput, db=Depends(get_db), staff=Depends(current_staff)):
     require_admin(staff)
-    s.program_for(db, staff, program_id, True)
+    current = s.program_for(db, staff, program_id, True)
+    if db.execute(select(t.cycles.c.id).where(t.cycles.c.program_id == str(program_id), t.cycles.c.status != 'finalised')).first():
+        raise HTTPException(409, 'Finalise the open ranking cycle before changing this program policy.')
     check_department(staff, body.department_id)
     s.get(db, t.departments, body.department_id)
     values = body.model_dump(mode='json', exclude={'hard_rules'})
     values['criteria_structured'] = {'hard_rules': [r.model_dump(mode='json') for r in body.hard_rules]}
     program = s.update(db, t.programs, program_id, **values, updated_at=s.now())
+    expired_count = 0
+    if s.canonical_policy(current) != s.canonical_policy(program):
+        expired_count = s.expire_active_applications_for_policy_change(db, program_id)
     for profile in s.rows(db, t.profiles):
         s.discover(db, profile, [program])
     db.commit()
-    return program
+    return {**program, 'expired_applications': expired_count}
 
 
 @router.post('/programs/{program_id}/cycles', status_code=201)
