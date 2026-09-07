@@ -12,19 +12,6 @@ export default function App() {
   const [step, setStep] = useState("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
-  // TESTING ONLY -- see api.js's requestOtp() docstring. Real
-  // self-registration doesn't exist in this product; these three fields
-  // only do anything when the backend's SKIP_ELIGIBILITY_CHECK is on.
-  const [testFullName, setTestFullName] = useState("");
-  const [testDistrict, setTestDistrict] = useState("");
-  const [testTradeCategory, setTestTradeCategory] = useState("");
-  const TRADE_CATEGORIES = [
-    "Trading businesses", "Grocery / Karyana", "Tailoring & embroidery",
-    "Livestock", "Manufacturing", "Services", "Food",
-    "Three-wheeler / rickshaw", "Agriculture", "Freelancing / technology",
-    "Handicrafts & Artisan Crafts", "Construction & Home Trades",
-    "Beauty & Personal Care", "Repair & Maintenance", "Education & Tutoring",
-  ];
   const [token, setToken] = useState(null);
   const [context, setContext] = useState(null);
   const [error, setError] = useState(null);
@@ -38,11 +25,7 @@ export default function App() {
     setError(null);
     setBusy(true);
     try {
-      const result = await requestOtp(phone, {
-        full_name: testFullName || undefined,
-        district: testDistrict || undefined,
-        trade_category: testTradeCategory || undefined,
-      });
+      const result = await requestOtp(phone);
       // auth.py's resend-cooldown (6 Sep 2026): otp_sent=false here means
       // a code for this number went out too recently -- NOT an error
       // (eligibility already passed), so this stays on the phone step
@@ -163,47 +146,6 @@ export default function App() {
             onChange={(e) => setPhone(e.target.value)}
             required
           />
-
-          {/* TESTING ONLY -- these three fields only do anything when the
-              backend's SKIP_ELIGIBILITY_CHECK is on AND the number is new.
-              With the real eligibility gate on (the normal state) they are
-              dead weight and just make the login screen look like a signup
-              form, so the panel is hidden unless VITE_SHOW_TEST_PROFILE=true
-              is set in .env.local. Real beneficiaries never see or need it --
-              a loan officer already entered their details for real. */}
-          {import.meta.env.VITE_SHOW_TEST_PROFILE === "true" && (
-          <details style={{ marginTop: 4, marginBottom: 12 }}>
-            <summary style={{ fontSize: 13, color: "var(--color-ink-soft)", cursor: "pointer" }}>
-              Testing only: enter a custom profile for a new number
-            </summary>
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-              <input
-                className="input"
-                type="text"
-                placeholder="Full name (optional)"
-                value={testFullName}
-                onChange={(e) => setTestFullName(e.target.value)}
-              />
-              <input
-                className="input"
-                type="text"
-                placeholder="District, e.g. Multan (optional)"
-                value={testDistrict}
-                onChange={(e) => setTestDistrict(e.target.value)}
-              />
-              <select
-                className="input"
-                value={testTradeCategory}
-                onChange={(e) => setTestTradeCategory(e.target.value)}
-              >
-                <option value="">Trade category (optional)</option>
-                {TRADE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-          </details>
-          )}
 
           {error && <div className="error-banner">{error}</div>}
           <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
