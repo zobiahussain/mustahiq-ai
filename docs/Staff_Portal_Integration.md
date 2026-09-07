@@ -63,7 +63,7 @@ If Ollama is offline or the machine is not connected to the required Tailscale n
 
 Profile creation runs duplicate detection and eligibility discovery against active programs. Discovery uses rules plus the saved XGBoost scorer; it does not use an LLM.
 
-Microfinance programs require explicit applications. They can appear as suppressed discovery matches but cannot be added to proactive outreach.
+Programs flagged `requires_explicit_application` can appear as suppressed discovery matches but cannot be added to proactive outreach. (Islamic Microfinance was the original reason for this flag; it is now handled entirely on the marketplace side and is not an eligibility-side program.)
 
 Verification is required before ranking. Verified outcome records store the assessed income, household size, urgency, and demographic factors used by the transparent prioritization rubric.
 

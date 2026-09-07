@@ -55,6 +55,31 @@ what the loan officer recorded (or anyone testing) had their listing filed under
 wrong trade with no way to fix it. The loan still answers "were they financed into a
 business at all"; the listing answers "which trade."
 
+## The 7 eligibility programme domains (areas of work)
+
+Source: `packages/data/synthetic.py` `build_synthetic_programs()` — the same catalogue the
+XGBoost confidence model trains on and the staff-portal demo seeds
+(`services/api/app/portal/seed.py`). Anchored to Al-Khidmat's real areas of work
+(alkhidmat.org/donations/area-of-work). One department per domain; two-to-three
+sub-programmes per department sharing the domain but gating on different hard rules
+(**22 programmes total**). The confidence model one-hots the 7 domains only; sub-programmes
+are separated by profile features and rule slack.
+
+| Domain (`program_domain_*`) | Department | Sub-programmes (demo) |
+|---|---|---|
+| `disaster_management` | Disaster Management | Disaster Response Grant · Emergency Shelter Support · Livelihood Rehabilitation |
+| `health_services` | Health Services | Individual Patient Case Support (**"Medical Assistance"** in the seed) · Thalassemia & Blood Disorder Care · Dialysis & Kidney Care · Mother & Child Health |
+| `education` | Education | Monthly Education Stipend (**"Education Support"** in the seed) · Orphan Education Scholarship · Higher Education Scholarship |
+| `wash` | Clean Water & WASH | Clean Water Access · School Water & Hygiene · Household Water Connection |
+| `orphan_care` | Orphan Care | Orphan Care Programme · Orphan Kafalat (Monthly Sponsorship) · Widowed Mother Support |
+| `bano_qabil` | BanoQabil | Bano Qabil Skills Programme · Bano Qabil IT & Digital Skills · Bano Qabil Vocational Training |
+| `community_services` | Community Services | Monthly Ration Support · Marriage & Jahez Assistance · Deceased-Breadwinner Family Support |
+
+**Islamic Microfinance is deliberately NOT a domain here.** A loan is a debt nobody is
+"found eligible" for without applying (SRS §5.3) — it is marketplace-only, as the
+`microfinance_loans` sign-up gate above. The `requires_explicit_application` suppression
+mechanism it motivated stays generic; no seeded programme sets the flag.
+
 ## The 4 loan products (`microfinance_loans.loan_product`)
 
 Stored as free text, loosely — **no logic hangs off which one it is**. Trade category

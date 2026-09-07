@@ -161,7 +161,7 @@ XGBoost training or artifact loading.
 - WASH failure: output is `not_eligible`, score is `None`, reason uses `Water-stressed district`, and scorer call count is zero.
 - Education incomplete: output is `incomplete`, score is `None`, reason requests missing information, and scorer call count is zero.
 - Bano Qabil pass: output is `pending_review`, score equals recorded scorer output, high-band text is present for 0.70, and scorer call count is one.
-- Explicit-application Islamic Microfinance pass: output is `suppressed`, retains its score, calls scorer once, and ends with the exact suppression suffix.
+- Explicit-application programme pass (any programme flagged `requires_explicit_application`): output is `suppressed`, retains its score, calls scorer once, and ends with the exact suppression suffix. (The flag existed for Islamic Microfinance, which is no longer an eligibility-side programme; the mechanism is generic.)
 - One profile against Education, WASH, and Health: returns three results in input order with `pending_review`, `not_eligible`, and `incomplete`; only the first has a score; scorer call count is one.
 - Repeated calls with separate recording scorers: result values are equal and each scorer records only its own expected call.
 

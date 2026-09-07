@@ -164,11 +164,19 @@ Microfinance is different. A loan creates a debt obligation. Surfacing someone a
 microfinance candidate they never asked for would be pushing a liability onto a vulnerable
 person, and no amount of eligibility confidence justifies it.
 
-Programs are therefore marked with a flag indicating whether they may be offered
-proactively. For programs requiring explicit application, cross-program discovery still
-evaluates the person — so the department can see who would qualify if they asked — but the
-match is suppressed rather than pooled for outreach. The person must approach Al-Khidmat
-and request it.
+Programs are therefore marked with a flag (`requires_explicit_application`) indicating
+whether they may be offered proactively. For programs requiring explicit application,
+cross-program discovery still evaluates the person — so the department can see who would
+qualify if they asked — but the match is suppressed rather than pooled for outreach. The
+person must approach Al-Khidmat and request it.
+
+> **Implementation note (7 Sep 2026):** Microfinance is the reason this flag exists, but it
+> is no longer modelled on the eligibility side at all — it is handled entirely by the
+> marketplace module as the `microfinance_loans` sign-up gate. The seven seeded eligibility
+> areas of work (disaster management, health services, education, clean water, orphan care,
+> BanoQabil, community services) are all proactively offerable; none set the flag by
+> default. The suppression mechanism remains in the engine for any future programme an
+> administrator flags.
 
 This also shapes the marketplace: a beneficiary only becomes a marketplace participant
 after they have applied for and received microfinance support and started a business. The

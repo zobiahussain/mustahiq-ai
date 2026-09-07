@@ -57,9 +57,13 @@ earlier revision:
 - **Fairness is now structural, not a convention.** `entry_path` (direct vs.
   ai_identified) is recorded for audit but is schema-enforced to never enter a ranking
   computation — see [docs/End_to_End_Flows.md](docs/End_to_End_Flows.md) Use Case 5–6.
-- **Programs can require explicit application.** Microfinance is flagged this way —
-  discovery still scores it, but the match is suppressed, never pooled, because a loan is
-  a debt nobody should be offered unprompted.
+- **Programs can require explicit application.** A programme an admin flags this way is
+  still scored by discovery, but the match is suppressed — never pooled, never sent for
+  proactive outreach. The mechanism is generic (`requires_explicit_application` on a
+  programme + the suppression path in `packages/eligibility/discovery.py`); the original
+  motivating case was Islamic Microfinance, which has since been removed from the
+  eligibility side entirely and is now marketplace-only (see Needs Reconciling #4). No
+  seeded demo programme sets the flag by default.
 - **The marketplace lost every fee.** No registration fee, no premium ranking, no
   donation-commitment schedule, no grace period. Premium ranking was explicitly
   considered and rejected. Replaced by: an optional voluntary donation once a business is
@@ -197,8 +201,10 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
 - Never auto-enroll; departments decide (SRS §8, Architecture §8).
 - **The platform never contacts a beneficiary directly** — every match is staff-reviewed
   first (Architecture §8).
-- Microfinance (and any program flagged `requires_explicit_application`) is never offered
-  proactively — a loan is a debt (SRS §5.3).
+- Any program flagged `requires_explicit_application` is never offered proactively — the
+  discovery match is suppressed. Islamic Microfinance (a loan is a debt, SRS §5.3) is the
+  reason the flag exists, and is now removed from the eligibility side altogether —
+  marketplace-only.
 - **No fees anywhere in the marketplace** — no registration fee, no premium ranking, no
   claim on business earnings; only a voluntary, no-schedule donation (Marketplace_Spec
   §1, §10).
@@ -469,9 +475,19 @@ needed.
    triggers 5/6 re-scan *all* beneficiaries when a program changes — that can't
    reasonably block an admin's HTTP request, and no queue/worker infra is named anywhere
    for a single Render free-tier service.
-4. **The seven program domains are still never listed.** SRS §1 still only names four as
-   examples. Blocks Data Engineering's synthetic dataset and Eligibility's "consistent
-   across all seven domains" requirement.
+4. ~~The seven program domains are still never listed.~~ — **resolved 7 Sep 2026.**
+   Anchored to Al-Khidmat's seven real areas of work
+   (alkhidmat.org/donations/area-of-work): **disaster management, health services,
+   education, clean water (WASH), orphan care, BanoQabil, community services.** Each is a
+   department in the staff portal holding two-to-three sub-programmes that share a domain
+   but gate on different hard rules (22 programmes total) — see
+   `packages/data/synthetic.py` `build_synthetic_programs()` and
+   `services/api/app/portal/seed.py`. **Islamic Microfinance is NOT one of the seven** — a
+   loan is a debt nobody is "found eligible" for without applying, so it is marketplace-only
+   (the `microfinance_loans` sign-up gate), never an eligibility-side discoverable
+   programme. The XGBoost confidence model one-hots the seven domains; sub-programmes are
+   separated by profile features and rule slack, not a dedicated column
+   (`packages/data/FEATURE_CONTRACT.md`).
 5. ~~Marketplace Portal: staff tool or beneficiary app?~~ — **resolved**, see Resolved
    above.
 6. ~~How does an account-less beneficiary access their own marketplace listing?~~ —

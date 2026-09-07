@@ -12,7 +12,7 @@ export default function Header({ subtitle, subtitleUr }) {
             Mustahiq<span className="app-title-accent">AI</span> Marketplace
           </span>
         </span>
-        <span className="app-title-ur">مستحق مارکیٹ پلیس</span>
+        <span className="app-title-ur">مستحق بازار</span>
       </div>
       {subtitle && (
         <h2 className="card-heading" style={{ marginBottom: 20 }}>
