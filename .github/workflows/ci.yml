@@ -98,6 +98,7 @@ jobs:
       - name: Install deps
         run: |
           pip install -r packages/eligibility/requirements.txt
+          pip install rapidfuzz
           pip install pytest pytest-subtests
       - name: Run offline unit tests
         run: |
