@@ -114,6 +114,51 @@ ADJACENT_DISTRICT_PAIRS = {
 }
 
 
+# ONE canonical district -> cluster_id map, so every part of the codebase
+# that needs a cluster for a district agrees on it. Al-Khidmat's real
+# 53-cluster map isn't this module's to invent (Data Engineering's, and
+# still pending -- see file docstring), so this stays a "one cluster per
+# district" simplification. The point is consistency: seed_data.py,
+# generate_seed_data.py, create_test_customer.py and auth.py's
+# SKIP_ELIGIBILITY_CHECK provisioning all read THIS, instead of three of
+# them hand-assigning codes and a fourth deriving "first 3 letters + -01"
+# (which gave "Lahore" -> LAH-01 while the seed data used LHR-01, so a
+# test customer never shared a cluster with any seeded listing).
+CLUSTER_BY_DISTRICT = {
+    # Punjab
+    "Lahore": "LHR-01", "Faisalabad": "FSD-01", "Multan": "MUL-01",
+    "Rawalpindi": "RWP-01", "Gujranwala": "GRW-01", "Sialkot": "SLK-01",
+    "Bahawalpur": "BWP-01", "Sargodha": "SGD-01", "Sheikhupura": "SKP-01",
+    "Rahim Yar Khan": "RYK-01", "Jhang": "JHG-01", "Sahiwal": "SWL-01",
+    "Okara": "OKR-01", "Kasur": "KSR-01", "Gujrat": "GJT-01",
+    # Sindh
+    "Karachi": "KHI-01", "Hyderabad": "HYD-01", "Sukkur": "SKR-01",
+    "Larkana": "LRK-01", "Mirpur Khas": "MPK-01", "Shaheed Benazirabad": "SBA-01",
+    "Jacobabad": "JCB-01", "Khairpur": "KRP-01", "Dadu": "DAD-01",
+    # Khyber Pakhtunkhwa
+    "Peshawar": "PSH-01", "Mardan": "MDN-01", "Abbottabad": "ABT-01",
+    "Swat": "SWT-01", "Kohat": "KHT-01", "Bannu": "BAN-01",
+    "Dera Ismail Khan": "DIK-01", "Mansehra": "MAN-01",
+    # Balochistan
+    "Quetta": "QTA-01", "Gwadar": "GWD-01", "Sibi": "SIB-01",
+    "Khuzdar": "KHZ-01", "Kech": "KEC-01",
+    # ICT / AJK / GB
+    "Islamabad": "ISB-01", "Muzaffarabad": "MZF-01", "Mirpur": "MIR-01",
+    "Gilgit": "GIL-01", "Skardu": "SKD-01",
+}
+
+
+def cluster_for(district: str) -> str:
+    """
+    Canonical cluster_id for a district. Falls back to "<first 3 letters>-01"
+    for any district not in CLUSTER_BY_DISTRICT -- fine as long as the same
+    district always derives the same id, which it does. Any district in
+    PROVINCE_BY_DISTRICT is a valid input; the fallback just isn't
+    guaranteed to line up with a seeded cluster.
+    """
+    return CLUSTER_BY_DISTRICT.get(district, f"{district[:3].upper()}-01")
+
+
 def is_adjacent(district_a: str, district_b: str) -> bool:
     return frozenset({district_a, district_b}) in ADJACENT_DISTRICT_PAIRS
 

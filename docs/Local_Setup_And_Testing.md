@@ -298,10 +298,11 @@ Both webhooks require the `X-Internal-Key` header — a missing or wrong key get
 | Script | Purpose |
 |---|---|
 | `packages/data/run_migrations.py` | Brings the database schema up to date — run this before anything else on a database you haven't used in a while (see §3.1) |
-| `packages/data/generate_seed_data.py` | Bulk realistic seed data (500+ beneficiaries) — additive, never touches existing rows |
-| `packages/data/generate_new_category_seed_data.py` | Targeted top-up: cycles every template variant for a fixed list of categories, guaranteeing both sides of every seeking flag exist — use after adding new templates to `generate_seed_data.py`'s `TEMPLATES`, not as a general-purpose generator |
+| `packages/data/generate_seed_data.py` | Bulk seed data (~2,000 beneficiaries): a random tail for volume **plus** balanced coverage — every hub city × every trade category × every template variant, so supply-chain / employment / joint-venture each have a real counterpart in every hub. Re-runnable: deletes its own previous output (marker phones `+9234…`/`+9235…`) and regenerates; never touches `seed_data.py`'s or the SKIP-check test rows |
+| `packages/data/generate_new_category_seed_data.py` | Targeted top-up for a fixed category list — mostly superseded by `generate_seed_data.py`'s balanced-coverage pass; still handy right after adding new `TEMPLATES` without a full re-run |
 | `packages/data/export_seed_data.py` | Dumps the live database to CSV for review in Excel |
 | `packages/data/create_test_customer.py` | One real customer at a time, via CLI args or prompts |
+| `packages/data/seed_demo_accounts.py` | The fixed cast of demo login numbers (one per trade category, Lahore + Karachi, no listing yet) — re-runnable; see `docs/Demo_Accounts.md` |
 | `packages/data/import_test_customers.py` | Many real customers at once, from `test_customers_template.csv` |
 | `packages/marketplace/smoke_test_*.py` | Each tests one piece of the module against the live database |
 | `services/api/smoke_test_new_endpoints.py` | Real HTTP tests against a running server |

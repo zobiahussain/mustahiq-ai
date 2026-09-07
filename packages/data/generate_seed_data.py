@@ -1,33 +1,46 @@
 """
-Generates a large, realistic-scale seed dataset -- 500 beneficiaries, 500
-loans, and a realistic subset of listings -- ADDED ON TOP of whatever
-seed_data.py already put in the database. Same additive precedent as
-seed_expansion_only.py (never touches or deletes existing rows).
+Generates a large, realistic-scale seed dataset and ADDS it on top of
+whatever seed_data.py already put in the database. Two layers:
+
+  1. A RANDOM TAIL (N_RANDOM_BENEFICIARIES) -- beneficiaries scattered
+     across every district/category/status, for realistic volume and a
+     long thin tail that proximity weighting and search have to cope with.
+  2. BALANCED HUB COVERAGE -- for every (hub city x trade category), one
+     listing of EVERY template variant in that category (a supplier AND a
+     producer-needing-inputs, a business-hiring AND a worker-seeking-work,
+     two partners). This is the layer that guarantees matching actually
+     has something to find: without it, a random 500 rows spread over
+     43 districts x 15 categories x 5 roles leaves most (cluster,
+     category) cells with 0-1 listings, so a new listing usually has no
+     complementary counterpart in its own cluster and every match funnel
+     empties out. With it, every hub has a real supply-chain pair, a real
+     employment pair, and a real joint-venture pair in every category.
+
+RE-RUNNABLE (this is new -- the old version refused to touch existing
+rows and so could only run once, then collided on the unique phone
+numbers). Every row this script creates carries a marker phone prefix
+(+9234 random tail, +9235 balanced coverage); on each run it first
+deletes its own previous output (and only its own -- seed_data.py's
++92300 curated rows and the +92300777/+92300999 SKIP_ELIGIBILITY_CHECK
+test rows are never touched), then regenerates. Safe to run repeatedly.
 
 WHY A GENERATOR, NOT MORE HAND-WRITTEN ROWS LIKE seed_data.py
 --------------------------------------------------------------------------
-seed_data.py's 30 beneficiaries/25 listings are hand-written on purpose --
-small enough that every row is deliberate (a specific matching scenario,
-a specific gate case). 500 rows is a different kind of data: not "a few
-scenarios to prove each code path works," but volume to test against --
-realistic distribution across categories/roles/districts, and enough
-listings that search/matching/proximity-weighting have real breadth to
-show. Hand-writing 500 rows isn't authorship, it's just typing -- a
-generator is the actually-correct engineering answer here (this is
-"synthetic data generation via templates," the same concept
-packages/eligibility's XGBoost training data uses, just simpler). Kept as
-a SEPARATE file from seed_data.py rather than folding the two together,
-since they're doing genuinely different jobs.
+seed_data.py's ~30 beneficiaries/~25 listings are hand-written on purpose
+-- small enough that every row is deliberate (a specific matching
+scenario, a specific gate case). Thousands of rows are a different kind
+of data: volume and coverage to test against, not scenarios. This is
+"synthetic data generation via templates," same concept
+packages/eligibility's XGBoost training data uses, just simpler. Kept a
+SEPARATE file from seed_data.py since they do genuinely different jobs.
 
-WHY NOT EVERY BENEFICIARY GETS A LISTING
+WHY NOT EVERY BENEFICIARY GETS A LISTING (random tail only)
 --------------------------------------------
-Marketplace_Spec.md section 2 is explicit: joining the marketplace is
-voluntary, once approved -- not automatic. Giving all 500 a listing would
-misrepresent real adoption. LISTING_CREATION_RATE below controls what
-fraction of ELIGIBLE beneficiaries (approved/disbursed status, a real
-trade category) actually created one -- everyone else is exactly what
-they'd be in real life: eligible, invited (marketplace_invitations would
-fire for them in the real flow), but hasn't gotten around to it yet.
+Marketplace_Spec.md section 2: joining the marketplace is voluntary, not
+automatic. LISTING_CREATION_RATE controls what fraction of ELIGIBLE
+random-tail beneficiaries actually created one -- the rest are eligible,
+invited, but haven't gotten around to it. The balanced-coverage layer
+ignores this rate on purpose: its whole point is guaranteed coverage.
 
 PERFORMANCE -- TWO THINGS DONE DIFFERENTLY FROM seed_data.py, BOTH TIED
 TO THE SAME NETWORK-LATENCY FINDING FROM TONIGHT'S OPTIMIZATION PASS
@@ -66,7 +79,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rag"))
 from embeddings import embed_texts  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "marketplace"))
-from proximity import PROVINCE_BY_DISTRICT  # noqa: E402
+from proximity import PROVINCE_BY_DISTRICT, CLUSTER_BY_DISTRICT  # noqa: E402
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
@@ -75,8 +88,21 @@ random.seed(42)  # reproducible -- rerunning this script (against an
                   # new random one each time, so results are comparable
                   # across a demo dry-run and the real thing.
 
-N_BENEFICIARIES = 500
-LISTING_CREATION_RATE = 0.75  # see file docstring
+N_RANDOM_BENEFICIARIES = 800   # the random tail -- see file docstring
+LISTING_CREATION_RATE = 0.85   # of eligible random-tail beneficiaries
+HUB_TAIL_BIAS = 0.6            # fraction of the random tail placed in a hub district
+
+# Hub cities that get FULL (hub x category x every template) coverage --
+# the biggest real population centres across all provinces + ICT, so
+# proximity weighting still has near/adjacent/far variety while every
+# common (cluster, category) actually has complementary listings in it.
+# cluster_id comes from proximity.CLUSTER_BY_DISTRICT (single source).
+_HUB_CITIES = [
+    "Lahore", "Karachi", "Faisalabad", "Rawalpindi", "Multan", "Gujranwala",
+    "Peshawar", "Islamabad", "Hyderabad", "Quetta", "Sialkot", "Sukkur",
+    "Bahawalpur", "Sargodha",
+]
+HUB_DISTRICTS = [(city, CLUSTER_BY_DISTRICT[city]) for city in _HUB_CITIES]
 
 # ---------------------------------------------------------------------------
 # Name pools -- enough combinations (60 first x 50 last = 3000) that 500
@@ -106,44 +132,18 @@ LAST_NAMES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Districts -- spread across all four provinces + ICT, so proximity
-# weighting (same cluster / adjacent / same province / elsewhere) has
-# real variety at 500-beneficiary scale, not just the original 7. One
-# cluster per district ("XXX-01"), same convention seed_data.py already
-# established -- Al-Khidmat's real 53-cluster map isn't this module's to
-# invent (Data Engineering's territory), so this stays a simplification,
-# same as seed_data.py's.
+# Districts -- spread across all four provinces + ICT + AJK + GB, so
+# proximity weighting (same cluster / adjacent / same province /
+# elsewhere) has real variety. The (district -> cluster_id) map is the
+# ONE in proximity.CLUSTER_BY_DISTRICT -- shared with seed_data.py,
+# create_test_customer.py and auth.py so every path agrees on a
+# district's cluster (see that dict's comment for the bug this fixes).
 # ---------------------------------------------------------------------------
 
-DISTRICTS = [
-    # (district, cluster_id) -- Punjab
-    ("Lahore", "LHR-01"), ("Faisalabad", "FSD-01"), ("Multan", "MUL-01"),
-    ("Rawalpindi", "RWP-01"), ("Gujranwala", "GRW-01"), ("Sialkot", "SLK-01"),
-    ("Bahawalpur", "BWP-01"), ("Sargodha", "SGD-01"), ("Sheikhupura", "SKP-01"),
-    ("Rahim Yar Khan", "RYK-01"), ("Jhang", "JHG-01"), ("Sahiwal", "SWL-01"),
-    ("Okara", "OKR-01"), ("Kasur", "KSR-01"), ("Gujrat", "GJT-01"),
-    # Sindh
-    ("Karachi", "KHI-01"), ("Hyderabad", "HYD-01"), ("Sukkur", "SKR-01"),
-    ("Larkana", "LRK-01"), ("Mirpur Khas", "MPK-01"), ("Shaheed Benazirabad", "SBA-01"),
-    ("Jacobabad", "JCB-01"), ("Khairpur", "KRP-01"), ("Dadu", "DAD-01"),
-    # Khyber Pakhtunkhwa
-    ("Peshawar", "PSH-01"), ("Mardan", "MDN-01"), ("Abbottabad", "ABT-01"),
-    ("Swat", "SWT-01"), ("Kohat", "KHT-01"), ("Bannu", "BAN-01"),
-    ("Dera Ismail Khan", "DIK-01"), ("Mansehra", "MAN-01"),
-    # Balochistan
-    ("Quetta", "QTA-01"), ("Gwadar", "GWD-01"), ("Sibi", "SIB-01"),
-    ("Khuzdar", "KHZ-01"), ("Kech", "KEC-01"),
-    # Islamabad Capital Territory
-    ("Islamabad", "ISB-01"),
-    # Azad Jammu & Kashmir
-    ("Muzaffarabad", "MZF-01"), ("Mirpur", "MIR-01"),
-    # Gilgit-Baltistan
-    ("Gilgit", "GIL-01"), ("Skardu", "SKD-01"),
-]
+DISTRICTS = sorted(CLUSTER_BY_DISTRICT.items())  # [(district, cluster_id), ...]
 
-# every district above must resolve to a real province -- fail loudly at
-# import time (not silently mid-generation) if seed_data.py's district
-# convention and proximity.py's reference list ever drift apart
+# fail loudly at import time if the two proximity reference maps ever
+# drift apart, rather than silently mid-generation
 for _district, _cluster in DISTRICTS:
     assert _district in PROVINCE_BY_DISTRICT, f"{_district} missing from proximity.PROVINCE_BY_DISTRICT"
 
@@ -660,70 +660,153 @@ def weighted_status():
     return random.choices(statuses, weights=weights, k=1)[0]
 
 
+GEN_PHONE_PREFIXES = ("+9234", "+9235")  # +9234 random tail, +9235 balanced coverage.
+                                         # Both distinct from seed_data.py's +923001234xxx
+                                         # curated rows and SKIP_ELIGIBILITY_CHECK's
+                                         # +92300777xxxxx / +92300999xxxxx test numbers, so
+                                         # this script's output is unambiguous to spot -- and
+                                         # to delete on the next run (see _clean_previous).
+
+
+def _clean_previous(cur):
+    """
+    Delete only the rows a previous run of THIS script created -- nothing
+    else. Identified purely by the marker phone prefixes above.
+
+    beneficiary_profiles -> loans/listings/participants/photos/notifications
+    all cascade on delete. The two FKs that DON'T cascade and would block
+    the delete are handled first: marketplace_matches.suggested_logistics_id
+    / .dismissed_by_listing_id (nulled), and match_messages.sender_beneficiary_id
+    (row deleted). Freshly generated seed data has none of these, but a run
+    after someone clicked around the app might.
+    """
+    cur.execute(
+        "select id from beneficiary_profiles where "
+        + " or ".join("phone like %s" for _ in GEN_PHONE_PREFIXES),
+        tuple(p + "%" for p in GEN_PHONE_PREFIXES),
+    )
+    ids = [r[0] for r in cur.fetchall()]
+    if not ids:
+        print("  nothing from a previous run to clear.")
+        return
+
+    cur.execute("select id from store_listings where primary_beneficiary_id = any(%s::uuid[])", (ids,))
+    listing_ids = [r[0] for r in cur.fetchall()]
+    if listing_ids:
+        cur.execute(
+            "delete from marketplace_matches "
+            "where listing_a_id = any(%s::uuid[]) or listing_b_id = any(%s::uuid[])",
+            (listing_ids, listing_ids),
+        )
+        cur.execute("update marketplace_matches set suggested_logistics_id = null "
+                    "where suggested_logistics_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update marketplace_matches set dismissed_by_listing_id = null "
+                    "where dismissed_by_listing_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update donations set listing_id = null where listing_id = any(%s::uuid[])", (listing_ids,))
+        cur.execute("update graduation_events set listing_id = null where listing_id = any(%s::uuid[])", (listing_ids,))
+    cur.execute("delete from match_messages where sender_beneficiary_id = any(%s::uuid[])", (ids,))
+    cur.execute("delete from beneficiary_profiles where id = any(%s::uuid[])", (ids,))
+    print(f"  cleared {len(ids)} beneficiaries and {len(listing_ids)} listings from a previous run.")
+
+
+def _random_district():
+    """Random-tail placement -- biased toward the hubs (HUB_TAIL_BIAS) so
+    proximity weighting sees realistic density, with a genuine long tail
+    of one-offs in the smaller districts."""
+    if random.random() < HUB_TAIL_BIAS:
+        return random.choice(HUB_DISTRICTS)
+    return random.choice(DISTRICTS)
+
+
+def _random_name():
+    is_male = random.random() < 0.55
+    first = random.choice(FIRST_NAMES_MALE if is_male else FIRST_NAMES_FEMALE)
+    return f"{first} {random.choice(LAST_NAMES)}", is_male
+
+
 def run():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
+
+    print("clearing rows from any previous run of this script...")
+    _clean_previous(cur)
 
     cur.execute("select id, name from trade_categories")
     category_id_by_name = {name: cid for cid, name in cur.fetchall()}
     category_names = list(category_id_by_name.keys())
 
-    # -----------------------------------------------------------------
-    # Beneficiaries
-    # -----------------------------------------------------------------
-    print(f"generating {N_BENEFICIARIES} beneficiaries...")
-    beneficiaries = []  # (id, name, phone, district, cluster_id)
-    used_names = set()
-    for i in range(N_BENEFICIARIES):
-        is_male = random.random() < 0.55
-        first = random.choice(FIRST_NAMES_MALE if is_male else FIRST_NAMES_FEMALE)
-        last = random.choice(LAST_NAMES)
-        name = f"{first} {last}"
-        # allow repeats past a point -- 3000 combos for 500 people makes
-        # collisions rare, but not worth an infinite retry loop over
-        used_names.add(name)
-        district, cluster_id = random.choice(DISTRICTS)
-        # +9234 prefix -- distinct from seed_data.py's +923001234xxx range
-        # and from SKIP_ELIGIBILITY_CHECK's auto-provisioned test numbers
-        # (+92300777xxxxx / +92300999xxxxx), so this block is unambiguous
-        # to spot in the database later.
-        phone = f"+9234{1000000 + i:07d}"
-        beneficiaries.append((str(uuid.uuid4()), name, phone, district, cluster_id, is_male))
-
-    psycopg2.extras.execute_values(
-        cur,
-        "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) values %s",
-        [(bid, name, phone, district, cluster_id, True) for bid, name, phone, district, cluster_id, _is_male in beneficiaries],
-    )
-    print(f"  {len(beneficiaries)} beneficiary_profiles inserted.")
-
-    # -----------------------------------------------------------------
-    # Loans -- one per beneficiary
-    # -----------------------------------------------------------------
-    print("generating loans...")
-    loans = []  # (id, beneficiary_id, product, category_name_or_None, status)
-    for i, (bid, *_rest) in enumerate(beneficiaries):
-        status_choice = weighted_status()
-        if status_choice == "liberation":
-            product, category_name, status = "Liberation Loan", None, "disbursed"
-        else:
-            product = random.choice([p for p in LOAN_PRODUCTS if p != "Liberation Loan"])
-            category_name = random.choice(category_names)
-            status = status_choice
-        loans.append((str(uuid.uuid4()), bid, product, category_name, status))
-
     today = date.today()
-    loan_rows = []
-    for i, (lid, bid, product, category_name, status) in enumerate(loans):
+    beneficiaries = []   # (id, name, phone, district, cluster, is_male)
+    loan_rows = []       # full microfinance_loans insert tuple
+    listing_plans = []   # (bid, name, district, cluster, category_name, template, is_women_led)
+
+    def add_person(phone, district, cluster, *, category_name, status, make_listing, template=None):
+        bid = str(uuid.uuid4())
+        name, is_male = _random_name()
+        beneficiaries.append((bid, name, phone, district, cluster, is_male))
         category_id = category_id_by_name.get(category_name) if category_name else None
-        disbursed_on = today - timedelta(days=random.randint(15, 400)) if status in ("disbursed", "defaulted") else None
+        product = ("Liberation Loan" if category_name is None
+                   else random.choice([p for p in LOAN_PRODUCTS if p != "Liberation Loan"]))
+        disbursed_on = (today - timedelta(days=random.randint(15, 400))
+                        if status in ("disbursed", "defaulted") else None)
         amount = 150000 if product in ("Small Business Loan", "Income Generating Project") else 100000
         loan_rows.append((
-            lid, f"AK-GEN-{10000 + i}", bid, product, category_id,
+            str(uuid.uuid4()), f"AK-GEN-{10000 + len(loan_rows)}", bid, product, category_id,
             f"Loan for {category_name or 'personal needs'}", status,
             amount if disbursed_on else None, disbursed_on,
         ))
+        if make_listing and category_id is not None:
+            listing_plans.append((
+                bid, name, district, cluster, category_name,
+                template or random.choice(TEMPLATES[category_name]), not is_male,
+            ))
 
+    # -----------------------------------------------------------------
+    # 1. Random tail -- volume + a realistic thin spread
+    # -----------------------------------------------------------------
+    print(f"generating {N_RANDOM_BENEFICIARIES} random-tail beneficiaries...")
+    for i in range(N_RANDOM_BENEFICIARIES):
+        district, cluster = _random_district()
+        status_choice = weighted_status()
+        if status_choice == "liberation":     # disbursed, but no trade category
+            category_name, status = None, "disbursed"
+        else:
+            category_name, status = random.choice(category_names), status_choice
+        make_listing = (status in ("approved", "disbursed") and category_name is not None
+                        and random.random() <= LISTING_CREATION_RATE)
+        add_person(f"+9234{1_000_000 + i:07d}", district, cluster,
+                   category_name=category_name, status=status, make_listing=make_listing)
+
+    # -----------------------------------------------------------------
+    # 2. Balanced coverage -- every hub x every category x every template
+    #    variant, so supply-chain / employment / joint-venture each have a
+    #    real counterpart in every hub. seeking_partner templates get two
+    #    copies so a joint venture has an actual pair, not a singleton.
+    # -----------------------------------------------------------------
+    print(f"generating balanced coverage: {len(HUB_DISTRICTS)} hubs "
+          f"x {len(category_names)} categories x every template...")
+    seq = 0
+    for district, cluster in HUB_DISTRICTS:
+        for category_name in category_names:
+            for template in TEMPLATES[category_name]:
+                copies = 2 if template["seeking"].get("seeking_partner") else 1
+                for _ in range(copies):
+                    add_person(f"+9235{1_000_000 + seq:07d}", district, cluster,
+                               category_name=category_name, status="disbursed",
+                               make_listing=True, template=template)
+                    seq += 1
+
+    # -----------------------------------------------------------------
+    # Insert beneficiaries + loans
+    # -----------------------------------------------------------------
+    print(f"inserting {len(beneficiaries)} beneficiary_profiles...")
+    psycopg2.extras.execute_values(
+        cur,
+        "insert into beneficiary_profiles (id, full_name, phone, district, cluster_id, consent_given) values %s",
+        [(bid, name, phone, district, cluster, True)
+         for bid, name, phone, district, cluster, _is_male in beneficiaries],
+    )
+    print(f"inserting {len(loan_rows)} microfinance_loans...")
     psycopg2.extras.execute_values(
         cur,
         "insert into microfinance_loans "
@@ -731,72 +814,44 @@ def run():
         " stated_purpose_text, status, amount_disbursed, disbursed_on) values %s",
         loan_rows,
     )
-    print(f"  {len(loan_rows)} microfinance_loans inserted.")
 
     # -----------------------------------------------------------------
-    # Listings -- only for eligible beneficiaries (approved/disbursed +
-    # a real category), and only LISTING_CREATION_RATE of those (see
-    # file docstring).
+    # Listing text -> embeddings -> insert
     # -----------------------------------------------------------------
-    print("selecting which eligible beneficiaries actually created a listing...")
-    listing_plans = []  # (beneficiary_id, district, cluster_id, category_name, template, business_name, is_women_led)
-    for (lid, ref, bid, product, category_id, purpose, status, amount, disbursed_on), \
-        (b_id, name, phone, district, cluster_id, is_male) in zip(loan_rows, beneficiaries):
-        if status not in ("approved", "disbursed") or category_id is None:
-            continue
-        if random.random() > LISTING_CREATION_RATE:
-            continue
-        category_name = next(n for n, cid in category_id_by_name.items() if cid == category_id)
-        template = random.choice(TEMPLATES[category_name])
-        business_name = _generate_business_name(name, category_name)
-        listing_plans.append((bid, district, cluster_id, category_name, template, business_name, not is_male))
-
-    print(f"  {len(listing_plans)} listings to create -- embedding in batches...")
-    en_texts = []
-    ur_texts = []
-    for bid, district, cluster_id, category_name, template, business_name, is_women_led in listing_plans:
-        # Pick ONE shared index into en/ur so the two stay a real
-        # translation pair -- every template above was written with
-        # en[i] and ur[i] as matching phrasings, so picking them
-        # independently would risk pairing an English sentence with an
-        # unrelated Urdu one for the same listing.
+    print(f"{len(listing_plans)} listings -- building text and embedding in batches...")
+    en_texts, ur_texts = [], []
+    for _bid, _name, _district, _cluster, category_name, template, _is_women_led in listing_plans:
+        # ONE shared index into en/ur so the two stay a real translation
+        # pair (each template was written with en[i]/ur[i] as matching
+        # phrasings -- picking independently could mismatch them).
         i = random.randrange(len(template["en"]))
-        en_text = template["en"][i]
-        ur_text = template["ur"][i]
-
-        # SPECIALTY_SUFFIXES layer -- see that dict's own comment. 85%,
-        # not 100%: leaving some listings as the plain base template is
-        # itself realistic (not everyone volunteers a specialty), and
-        # keeps a few genuinely-identical-text pairs around, which is
-        # useful for confirming exact-duplicate handling doesn't break.
+        en_text, ur_text = template["en"][i], template["ur"][i]
+        # SPECIALTY_SUFFIXES second diversity layer -- see that dict's
+        # comment. 85%, not 100%, keeps a few identical-text pairs around
+        # for exact-duplicate-handling checks.
         if category_name in SPECIALTY_SUFFIXES and random.random() < 0.85:
             en_suffix, ur_suffix = random.choice(SPECIALTY_SUFFIXES[category_name])
             en_text = f"{en_text} -- {en_suffix}"
             ur_text = f"{ur_text}، {ur_suffix}"
-
         en_texts.append(en_text)
         ur_texts.append(ur_text)
 
-    # embed_texts() batches the model call -- see file docstring's
-    # "performance" note. Chunked at 100 to keep memory/latency
-    # per-batch reasonable rather than one giant 375-item call.
     BATCH = 100
     vectors = []
     for start in range(0, len(en_texts), BATCH):
-        chunk = en_texts[start:start + BATCH]
-        vectors.extend(embed_texts(chunk))
+        vectors.extend(embed_texts(en_texts[start:start + BATCH]))
         print(f"    embedded {min(start + BATCH, len(en_texts))}/{len(en_texts)}")
 
-    listing_rows = []
-    participant_rows = []
-    for (bid, district, cluster_id, category_name, template, business_name, is_women_led), en_text, ur_text, vector in zip(
+    listing_rows, participant_rows = [], []
+    for (bid, name, district, cluster, category_name, template, is_women_led), en_text, ur_text, vector in zip(
         listing_plans, en_texts, ur_texts, vectors
     ):
         listing_id = str(uuid.uuid4())
         seeking = template["seeking"]
         travel_flag = template.get("travel")
         listing_rows.append((
-            listing_id, bid, business_name, category_id_by_name[category_name],
+            listing_id, bid, _generate_business_name(name, category_name),
+            category_id_by_name[category_name],
             en_text, ur_text, None,  # skills_en -- not generated here, matches seed_data.py's style
             template["role"],
             seeking.get("seeking_inputs", False), seeking.get("seeking_workers", False),
@@ -805,16 +860,14 @@ def run():
             travel_flag == "will_deliver_outside_area",
             travel_flag == "will_relocate_for_work",
             travel_flag == "will_partner_outside_district",
-            is_women_led,  # derived from the owning beneficiary's generated gender -- an
-                            # imperfect proxy (gender isn't the same as who leads a business),
-                            # but a real signal instead of a hardcoded False that zeroed out
-                            # the impact report's women_led_businesses metric for every
-                            # generated listing.
-            district, cluster_id, vector,
+            is_women_led,  # from the owning beneficiary's generated gender -- an imperfect
+                            # proxy, but a real signal instead of a hardcoded False that
+                            # zeroed out the impact report's women_led_businesses metric.
+            district, cluster, vector,
         ))
         participant_rows.append((listing_id, bid, "owner", "confirmed"))
 
-    print("inserting listings...")
+    print(f"inserting {len(listing_rows)} store_listings + listing_participants...")
     psycopg2.extras.execute_values(
         cur,
         """
@@ -834,13 +887,15 @@ def run():
         "insert into listing_participants (listing_id, beneficiary_id, role, status) values %s",
         participant_rows,
     )
-    print(f"  {len(listing_rows)} store_listings + listing_participants inserted.")
 
     conn.commit()
     cur.close()
     conn.close()
-    print(f"\nDone. +{len(beneficiaries)} beneficiaries, +{len(loan_rows)} loans, "
-          f"+{len(listing_rows)} listings added on top of whatever was already there.")
+
+    n_hub = sum(1 for b in beneficiaries if b[2].startswith("+9235"))
+    print(f"\nDone. {len(beneficiaries)} beneficiaries "
+          f"({n_hub} balanced-coverage, {len(beneficiaries) - n_hub} random tail), "
+          f"{len(loan_rows)} loans, {len(listing_rows)} listings.")
 
 
 if __name__ == "__main__":

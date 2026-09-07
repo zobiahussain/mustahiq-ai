@@ -163,11 +163,14 @@ export default function App() {
             required
           />
 
-          {/* TESTING ONLY -- only does anything if the backend's
-              SKIP_ELIGIBILITY_CHECK is on and this number is new. Real
-              beneficiaries never see or need this; a loan officer already
-              entered their details for real. Collapsed by default so it
-              doesn't read as a normal signup form. */}
+          {/* TESTING ONLY -- these three fields only do anything when the
+              backend's SKIP_ELIGIBILITY_CHECK is on AND the number is new.
+              With the real eligibility gate on (the normal state) they are
+              dead weight and just make the login screen look like a signup
+              form, so the panel is hidden unless VITE_SHOW_TEST_PROFILE=true
+              is set in .env.local. Real beneficiaries never see or need it --
+              a loan officer already entered their details for real. */}
+          {import.meta.env.VITE_SHOW_TEST_PROFILE === "true" && (
           <details style={{ marginTop: 4, marginBottom: 12 }}>
             <summary style={{ fontSize: 13, color: "var(--color-ink-soft)", cursor: "pointer" }}>
               Testing only: enter a custom profile for a new number
@@ -199,6 +202,7 @@ export default function App() {
               </select>
             </div>
           </details>
+          )}
 
           {error && <div className="error-banner">{error}</div>}
           <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
