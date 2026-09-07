@@ -1,18 +1,21 @@
-# apps/main-portal — Main Platform Portal
+# apps/main-portal - Main Platform Portal
 
-**Owner:** NLP, Conversational Assistant & Main Platform Portal role.
+React + Vite, staff-facing only. Beneficiaries do not log in here; staff operate the portal on a beneficiary's behalf.
 
-React + Vite, **staff-facing only** — beneficiaries never log in; a field officer or
-department admin operates this on a beneficiary's behalf, in conversation. Scope grew
-substantially from "profile entry + recommendations view": now covers profile entry, the
-**match review worklist** (approve/dismiss AI-suggested matches), the **outreach list**
-(people pooled, waiting for verification), **verification** (recording outcomes: verified
-/ no_actual_need / assisted_elsewhere / not_eligible / unreachable / declined), the
-**ranked candidate pool** (bi-weekly prioritization results, with allocation), and the
-department view. See [docs/End_to_End_Flows.md](../../docs/End_to_End_Flows.md) for the
-full staff workflow this portal needs to support.
+The portal supports profile entry, eligibility discovery review, outreach pooling, verification, direct applications, ranked candidate cycles, approvals, finalisation records, duplicate review, program rule management, source document storage, a staff source-backed assistant, and a floating public support chatbot for program questions. It keeps marketplace concerns out of this app.
 
-**Depends on:** `services/api`.
+The current UI uses Al-Khidmat's public brand reference and the official logo/font assets in `public/`.
 
-Shares palette, logo, and typography with `apps/marketplace-portal` despite being a
-separate codebase.
+## Run Locally
+
+Start the FastAPI staff API first, then:
+
+```powershell
+cd apps/main-portal
+..\..\.tools\node.exe ..\..\.tools\package\bin\npm-cli.js install
+..\..\.tools\node.exe ..\..\.tools\package\bin\npm-cli.js run dev
+```
+
+Open `http://127.0.0.1:5174`. In demo mode, choose `Enter demo workspace`.
+
+The frontend calls `/portal` by default through the Vite proxy. For hosted deployments, set `VITE_STAFF_API_BASE` in `.env`.
