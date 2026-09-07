@@ -1,39 +1,19 @@
-# services/api — FastAPI Backend
+# services/api - FastAPI Backend
 
-**Owner:** Similarity Matching, Duplicate Detection, Backend & Integration role.
+FastAPI + Pydantic v2 layer serving both apps. It owns the shared database connection layer and the staff portal routes under `/portal`.
 
-FastAPI + Pydantic v2 layer serving both apps. Owns the Supabase connection layer, the
-Render deployment, and **two separate auth flows**:
+The public support chatbot uses `/portal/support/programs` and `/portal/support/chat`. Those endpoints expose only active program descriptions and saved program/source passages, not beneficiary or staff casework data.
 
-- **Staff** (Main Platform Portal): Supabase Auth, email + password. field_officer /
-  department_admin / super_admin roles gate who can edit program criteria and which
-  departments' matches are visible.
-- **Marketplace** (beneficiary app): phone number + SMS one-time code, no password.
-  Owns the send-code/verify-code mechanics against `beneficiary_app_accounts` and
-  `login_otps` (`packages/data/schema/al_khidmat_marketplace_schema.sql`); the
-  Marketplace/RAG role builds the app-side login flow that calls it.
+## Staff Auth
 
-Wires together `packages/eligibility`, `packages/marketplace`, `packages/dedup`,
-`packages/nlp_assistant`, and `packages/data`.
+Staff portal live mode uses Supabase Auth email/password. The `staff_users.auth_user_id` column must map each app staff row to a Supabase Auth user. `area_manager`, `department_admin`, and `super_admin` roles gate program editing and department visibility.
 
-**Depends on:** `packages/data` (schema), `packages/eligibility` (scoring output).
-**Depended on by:** `apps/main-portal`, `apps/marketplace-portal`.
+Local `PORTAL_DEMO_MODE=true` exposes a clearly labelled synthetic demo session and stores data in SQLite.
 
-**`main.py` — the marketplace slice's endpoints, built and tested 4 Sep 2026.** This is
-still nominally P3's ownership (the role note above stands), but the marketplace
-app-side endpoints exist now, as real running code, tested with actual HTTP requests
-against the live Supabase database: `POST /auth/request-otp`, `POST /auth/verify-otp`,
-`GET /me/context`, `POST /listing/extract`, `POST /listing`, `GET
-/listing/{id}/matches` (this last one added here — not in the originally locked
-contract, but nothing shows a beneficiary their matches without it). Every route is a
-thin wrapper — the actual logic lives in, and was already independently tested in,
-`packages/marketplace/*.py`. Login tokens (JWT) are issued and checked here, not in
-`packages/marketplace/auth.py`, which stays framework-agnostic on purpose. The
-eligibility-side endpoints (`POST /profile` and everything else in Open Question 1)
-are not touched by this file.
+## Marketplace
 
-**Hosting:** Render free tier, per the stack table — `requirements.txt` in this folder
-is what Render installs. Not yet deployed; run locally with
-`uvicorn main:app --port 8000` from this folder (needs the repo-root `.env`, and the
-`packages/rag` venv's dependencies — `pip install -r requirements.txt` here plus
-`../../packages/rag/requirements.txt` covers everything this file imports).
+The marketplace remains a separate beneficiary-facing module. Its standalone API entry point is `services/api/main.py`; `services/api/unified.py` can mount marketplace and staff apps together for integration work.
+
+## Setup
+
+For staff portal setup, migration notes, and verification commands, see `docs/Staff_Portal_Integration.md`.

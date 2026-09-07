@@ -46,6 +46,15 @@ A `microfinance_loans` row with `trade_category_id` set to one of these = eligib
 create a marketplace listing. `trade_category_id = null` = not a business (Liberation
 Loan and similar) = can log in, never offered listing creation.
 
+**The loan's category is the GATE only, not the listing's category (changed 7 Sep
+2026).** Which category a listing uses is chosen when the listing is created — the voice
+draft (`FULL_DRAFT_PROMPT`) proposes one from this list, and the review screen shows it
+pre-selected and changeable, same as role and the seeking flags. `save_listing()`
+validates it against this table. Reason: a beneficiary whose real business differs from
+what the loan officer recorded (or anyone testing) had their listing filed under the
+wrong trade with no way to fix it. The loan still answers "were they financed into a
+business at all"; the listing answers "which trade."
+
 ## The 4 loan products (`microfinance_loans.loan_product`)
 
 Stored as free text, loosely — **no logic hangs off which one it is**. Trade category

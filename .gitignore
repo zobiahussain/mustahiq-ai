@@ -28,3 +28,8 @@ packages/data/exports/
 .idea/
 .DS_Store
 Thumbs.db
+# Local staff demo, tooling, and build outputs
+.local/
+.tools/
+.venv/
+apps/main-portal/dist/

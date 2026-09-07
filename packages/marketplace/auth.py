@@ -385,7 +385,15 @@ def get_me_context(beneficiary_id: str) -> dict:
         (beneficiary_id,),
     )
     row = cur.fetchone()
-    trade_category, stated_purpose = row if row else (None, None)
+    loan_trade_category, stated_purpose = row if row else (None, None)
+
+    # The picker list for the listing-creation review screen. The listing's
+    # category is chosen there now (LLM-drafted, user-confirmed), not taken
+    # from the loan -- loan_trade_category below is only the eligibility
+    # gate ("financed into a business at all"), no longer the listing's
+    # category. See packages/marketplace/create_listing.py.
+    cur.execute("select name from trade_categories where active order by id")
+    all_trade_categories = [r[0] for r in cur.fetchall()]
 
     cur.close()
     conn.close()
@@ -394,7 +402,8 @@ def get_me_context(beneficiary_id: str) -> dict:
         "full_name": full_name,
         "district": district,
         "cluster_id": cluster_id,
-        "trade_category": trade_category,
+        "trade_category": loan_trade_category,   # kept for display/back-compat; not the listing's category
         "stated_purpose": stated_purpose,
-        "can_create_listing": trade_category is not None,
+        "can_create_listing": loan_trade_category is not None,
+        "trade_categories": all_trade_categories,
     }
