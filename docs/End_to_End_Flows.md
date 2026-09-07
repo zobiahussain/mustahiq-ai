@@ -62,9 +62,11 @@ change.
    they only exist as prose.
 2. Each program the person may qualify for produces a `match_records` row with a
    confidence score and a plain-language reason, at `status = pending_review`.
-3. Programs flagged as requiring an explicit application are evaluated but SUPPRESSED —
-   the match is not pooled and the person is not approached. Microfinance carries this
-   flag: a loan is a debt, and nobody should be offered one they did not ask for.
+3. Programs flagged `requires_explicit_application` are evaluated but SUPPRESSED — the
+   match is not pooled and the person is not approached. This flag exists for microfinance
+   (a loan is a debt nobody should be offered unasked), which is now handled entirely by
+   the marketplace module and is no longer an eligibility-side program; the seven seeded
+   areas of work do not set the flag.
 4. The area manager sees immediately that the health-loan applicant may also qualify for,
    say, an education program.
 5. The manager reviews and either dismisses the suggestion or pools it.

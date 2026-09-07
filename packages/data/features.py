@@ -18,7 +18,7 @@ PROGRAM_DOMAINS = (
     "wash",
     "orphan_care",
     "bano_qabil",
-    "islamic_microfinance",
+    "community_services",
 )
 EDUCATION_LEVELS = ("none", "primary", "matric", "intermediate", "graduate")
 EMPLOYMENT_STATUSES = ("unemployed", "daily_wage", "self_employed", "salaried")
@@ -45,6 +45,14 @@ FEATURE_COLUMNS = (
     "income_per_head_missing",
     "dependents_to_earners_ratio",
     "dependents_to_earners_ratio_missing",
+    "dependency_share",
+    "dependency_share_missing",
+    "school_age_ratio",
+    "school_age_ratio_missing",
+    "vulnerability_count",
+    "vulnerability_count_missing",
+    "is_sole_earner",
+    "is_sole_earner_missing",
     "avg_numeric_rule_slack",
     "avg_numeric_rule_slack_missing",
     *(column for name in BOOLEAN_PROFILE_FIELDS for column in (name, f"{name}_missing")),
@@ -139,10 +147,41 @@ def build_feature_row(
     if profile.household_size in {None, 0} or profile.dependents is None:
         row["dependents_to_earners_ratio"] = float("nan")
         row["dependents_to_earners_ratio_missing"] = 1.0
+        row["dependency_share"] = float("nan")
+        row["dependency_share_missing"] = 1.0
+        row["is_sole_earner"] = float("nan")
+        row["is_sole_earner_missing"] = 1.0
     else:
         earners = max(profile.household_size - profile.dependents, 1)
         row["dependents_to_earners_ratio"] = profile.dependents / earners
         row["dependents_to_earners_ratio_missing"] = 0.0
+        # Share of the household that cannot support itself -- a depth-3 tree
+        # cannot synthesise this from the two raw columns on its own.
+        row["dependency_share"] = profile.dependents / profile.household_size
+        row["dependency_share_missing"] = 0.0
+        row["is_sole_earner"] = float(profile.household_size - profile.dependents <= 1)
+        row["is_sole_earner_missing"] = 0.0
+
+    if profile.household_size in {None, 0} or profile.school_age_children is None:
+        row["school_age_ratio"] = float("nan")
+        row["school_age_ratio_missing"] = 1.0
+    else:
+        row["school_age_ratio"] = profile.school_age_children / profile.household_size
+        row["school_age_ratio_missing"] = 0.0
+
+    # Count of confirmed vulnerability markers. Missing only when every marker
+    # is unknown; a known-False marker counts as a real zero.
+    vulnerability_flags = (
+        profile.has_disability,
+        profile.chronic_illness_flag,
+        profile.is_orphan,
+    )
+    if all(flag is None for flag in vulnerability_flags):
+        row["vulnerability_count"] = float("nan")
+        row["vulnerability_count_missing"] = 1.0
+    else:
+        row["vulnerability_count"] = float(sum(1 for flag in vulnerability_flags if flag))
+        row["vulnerability_count_missing"] = 0.0
 
     slack, slack_missing = _average_numeric_rule_slack(profile, program_rules)
     row["avg_numeric_rule_slack"] = slack

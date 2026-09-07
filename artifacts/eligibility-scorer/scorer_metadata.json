@@ -16,6 +16,14 @@
     "income_per_head_missing",
     "dependents_to_earners_ratio",
     "dependents_to_earners_ratio_missing",
+    "dependency_share",
+    "dependency_share_missing",
+    "school_age_ratio",
+    "school_age_ratio_missing",
+    "vulnerability_count",
+    "vulnerability_count_missing",
+    "is_sole_earner",
+    "is_sole_earner_missing",
     "avg_numeric_rule_slack",
     "avg_numeric_rule_slack_missing",
     "has_disability",
@@ -48,6 +56,46 @@
     "program_domain_wash",
     "program_domain_orphan_care",
     "program_domain_bano_qabil",
-    "program_domain_islamic_microfinance"
-  ]
+    "program_domain_community_services"
+  ],
+  "training": {
+    "trained_on": "2026-09-07",
+    "synthetic_profiles": 15000,
+    "previous_synthetic_profiles": 3000,
+    "programmes": 22,
+    "programme_domains": [
+      "bano_qabil",
+      "community_services",
+      "disaster_management",
+      "education",
+      "health_services",
+      "orphan_care",
+      "wash"
+    ],
+    "labeled_examples": 54204,
+    "feature_count": 57,
+    "seed": 42,
+    "holdout_metrics": {
+      "precision": 0.7016,
+      "recall": 0.7286,
+      "f1": 0.7149,
+      "roc_auc": 0.7557,
+      "positive_rate": 0.5379,
+      "train_size": 43522,
+      "test_size": 10682,
+      "train_profile_count": 10990,
+      "test_profile_count": 2695,
+      "confusion_matrix": [
+        [
+          3263,
+          1755
+        ],
+        [
+          1537,
+          4127
+        ]
+      ]
+    },
+    "note": "Synthetic data only (SRS 7.5). Trained on a single 80/20 StratifiedGroupKFold split grouped by profile so no beneficiary appears in both train and test."
+  }
 }

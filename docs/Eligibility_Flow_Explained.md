@@ -102,13 +102,23 @@ product.
 
 ### 3.3 Features
 
-- **Profile fields:** income, household size, dependents, school-age children, education
-  level, disability flag, employment status, prior assistance count.
-- **Derived features:** income per household member, ratio of dependents to earners,
-  distance from the programme's stated thresholds.
-- **Soft signals** extracted from the criteria document — see section 4.
+- **Profile fields:** income, household size, dependents, school-age children, age,
+  education level, disability / chronic-illness / orphan flags, home ownership, employment
+  status, marital status, prior assistance count.
+- **Derived features:** income per household member, dependents-to-earners ratio,
+  dependency share, school-age-children ratio, a compound vulnerability count,
+  sole-earner flag, and average distance from the programme's stated thresholds.
+- **Programme domain** one-hot — one of the seven areas of work (section 1). Programme
+  sub-programmes share their parent domain's indicator.
 - **Never used as a feature:** `entry_path`, or anything describing how the person was
   found. This is enforced at the allocation stage too and applies equally here.
+
+The exact 57-feature contract lives in `packages/data/FEATURE_CONTRACT.md`. For the
+hackathon the model trains on **15,000 synthetic profiles** (up from 3,000 in the first
+revision) evaluated against all 22 sub-programmes — roughly 54,000 labelled
+`(profile, programme)` rows — with an 80/20 split grouped by profile so no synthetic
+beneficiary appears in both train and test. Held-out metrics for the shipped artifact are
+recorded in `artifacts/eligibility-scorer/scorer_metadata.json`.
 
 ## 4. What the Eligibility Documents Are For
 
