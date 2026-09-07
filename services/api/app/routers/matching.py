@@ -1,34 +1,13 @@
-import random
-
+"""Compatibility endpoint: real deterministic discovery, no random scores."""
+from uuid import UUID
 from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
-from app.core.auth import get_current_staff
 from app.core.db import get_db
-from app.schemas.matching import ProgramMatch
+from app.portal.auth import current_staff
+from app.portal.router import discovery
 
-router = APIRouter(prefix="/beneficiaries", tags=["matching"])
-
-STUB_REASON = "Stub — pending Eligibility Engine integration"
+router = APIRouter(prefix='/beneficiaries', tags=['matching'])
 
 
-@router.get("/{beneficiary_id}/matches", response_model=list[ProgramMatch])
-def get_beneficiary_matches(
-    beneficiary_id: str,
-    db: Session = Depends(get_db),
-    staff: dict = Depends(get_current_staff),
-):
-    rows = db.execute(
-        text("select id, name from programs where active = true")
-    ).fetchall()
-
-    return [
-        ProgramMatch(
-            program_id=row.id,
-            program_name=row.name,
-            score=round(random.random(), 4),
-            reason=STUB_REASON,
-        )
-        for row in rows
-    ]
+@router.get('/{beneficiary_id}/matches')
+def get_beneficiary_matches(beneficiary_id: UUID, db=Depends(get_db), staff=Depends(current_staff)):
+    return discovery(beneficiary_id, db, staff)
