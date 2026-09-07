@@ -1,38 +1,30 @@
-from rapidfuzz import fuzz
+"""Supabase-side duplicate detection (trigger 2).
+
+The comparison logic lives in ``packages/dedup`` (framework-free, shared with
+the staff portal's ``app/portal/service.detect_duplicates``). This module only
+owns the database work: read every other profile, compare, and write pending
+``duplicate_flags`` for the staff queue. Merging is always manual.
+"""
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-FUZZY_THRESHOLD = 85  # 0-100 scale; tune later if it's too strict/loose
+from dedup import FUZZY_THRESHOLD, compare  # noqa: F401  (FUZZY_THRESHOLD re-exported for callers/tests)
 
 
 def check_duplicates(db: Session, new_profile_id, full_name: str, phone: str | None, cnic: str | None):
-    flagged_ids = set()
-
-    # 1. CNIC exact match first
-    if cnic:
-        exact_matches = db.execute(
-            text("select id from beneficiary_profiles where cnic = :cnic and id != :new_id"),
-            {"cnic": cnic, "new_id": new_profile_id},
-        ).fetchall()
-        for row in exact_matches:
-            _insert_flag(db, new_profile_id, row.id, 100.0, "cnic_exact")
-            flagged_ids.add(row.id)
-
-    # 2. Fuzzy name + phone against everyone else not already flagged
     candidates = db.execute(
-        text("select id, full_name, phone from beneficiary_profiles where id != :new_id"),
+        text("select id, full_name, phone, cnic from beneficiary_profiles where id != :new_id"),
         {"new_id": new_profile_id},
     ).fetchall()
 
     for row in candidates:
-        if row.id in flagged_ids:
-            continue
-        name_score = fuzz.token_sort_ratio(full_name, row.full_name)
-        phone_score = fuzz.ratio(phone or "", row.phone or "") if phone and row.phone else 0
-        combined = max(name_score, phone_score)
-
-        if combined >= FUZZY_THRESHOLD:
-            _insert_flag(db, new_profile_id, row.id, combined, "name_phone_fuzzy")
+        signal = compare(
+            name_a=full_name, phone_a=phone, cnic_a=cnic,
+            name_b=row.full_name, phone_b=row.phone, cnic_b=getattr(row, "cnic", None),
+        )
+        if signal is not None:
+            _insert_flag(db, new_profile_id, row.id, signal.score, signal.matched_on)
 
     db.commit()
 

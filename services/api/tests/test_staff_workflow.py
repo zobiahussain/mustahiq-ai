@@ -165,6 +165,35 @@ class StaffWorkflowTests(unittest.TestCase):
         self.call('POST', f"/cycles/{cycle['id']}/candidates/{candidate['id']}", {'approved': False})
         self.call('POST', f"/cycles/{cycle['id']}/finalise")
 
+    def test_scheduled_ranking_batch_ranks_due_programs_and_stops_at_ranked(self):
+        # Trigger 8 (packages/workflows). A fresh seed has no cycles, so every
+        # program with a verified pool is due.
+        result = self.call('POST', '/cycles/run-due')
+        self.assertTrue(result['ran'], result)
+        edu = demo_id('Education Support')
+        self.assertIn(edu, [r['program_id'] for r in result['ran']])
+        state = self.workspace()
+        ran_ids = {r['cycle_id'] for r in result['ran']}
+        batch_cycles = [c for c in state['cycles'] if c['id'] in ran_ids]
+        self.assertEqual(len(batch_cycles), len(result['ran']))
+        # ranked, never auto-allocated
+        self.assertTrue(all(c['status'] == 'ranked' for c in batch_cycles))
+        self.assertFalse(any(a['status'] == 'disbursed' for a in state['applications']))
+        # running again now is a no-op: every due program has an open cycle
+        again = self.call('POST', '/cycles/run-due')
+        self.assertEqual(again['ran'], [])
+        self.assertTrue(any('open cycle' in s['reason'].lower() or 'no verified' in s['reason'].lower()
+                            for s in again['skipped']) or again['skipped'] == [])
+
+    def test_scheduled_ranking_batch_is_super_admin_only(self):
+        staff_id = str(uuid4())
+        with SessionLocal() as db:
+            db.execute(t.staff_users.insert().values(id=staff_id, full_name='Dept Admin', email='da@example.test',
+                                                     role='department_admin', department_id=demo_id('education'), active=True))
+            db.commit()
+        headers = {'Authorization': 'Bearer ' + demo_token(staff_id)}
+        self.call('POST', '/cycles/run-due', expected=403, headers=headers)
+
     def test_program_policy_change_expires_active_applications_and_requires_closed_cycle(self):
         state = self.workspace()
         program = next(p for p in state['programs'] if p['id'] == demo_id('Education Support'))

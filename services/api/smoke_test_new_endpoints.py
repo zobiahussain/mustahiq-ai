@@ -46,7 +46,7 @@ def login(phone: str) -> str:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages", "marketplace"))
     import importlib
-    auth = importlib.import_module("auth")
+    importlib.import_module("auth")
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -72,9 +72,7 @@ def main():
         # the code -- it's only ever returned via the printed "SMS", never
         # in the HTTP response, by design (see auth.py docstring). Then
         # verify via the REAL HTTP endpoint, same as the frontend does.
-        import hashlib
         conn = db()
-        cur = conn.cursor()
         # request_otp already ran once via requests.post below in each
         # call site -- here we just need code_hash to brute-check against
         # is impossible (sha256, one-way). Simplest correct approach:

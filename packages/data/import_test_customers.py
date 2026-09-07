@@ -101,9 +101,9 @@ def run(csv_path: str):
         for row_num, phone, reason in skipped:
             print(f"  row {row_num} ({phone}): {reason}")
 
-    print(f"\nSee create_test_customer.py's own printed output (or docs/Local_Setup_And_Testing.md) "
-          f"for how to test the login gate and fire the loan-approved/loan-repaid webhooks against "
-          f"any of the loan_ids above.")
+    print("\nSee create_test_customer.py's own printed output (or docs/Local_Setup_And_Testing.md) "
+          "for how to test the login gate and fire the loan-approved/loan-repaid webhooks against "
+          "any of the loan_ids above.")
 
 
 if __name__ == "__main__":
