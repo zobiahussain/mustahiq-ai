@@ -14,6 +14,7 @@ from unittest.mock import patch
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'services' / 'api'))
 sys.path.insert(0, str(REPO / 'packages'))
+(REPO / '.local').mkdir(exist_ok=True)  # gitignored; may not exist on a fresh checkout / in CI
 _tmp = tempfile.TemporaryDirectory(prefix='mustahiq-staff-test-', dir=REPO / '.local')
 os.environ['PORTAL_DEMO_MODE'] = 'true'
 os.environ['STAFF_GENERATION_ENABLED'] = 'false'
