@@ -345,7 +345,7 @@ body {
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-dark);
-  box-shadow: 0 4px 14px rgba(14, 107, 79, 0.28);
+  box-shadow: 0 4px 14px rgba(0, 96, 174, 0.28);
 }
 .btn-secondary {
   background: transparent;
@@ -361,7 +361,7 @@ body {
 }
 .btn-accent:hover:not(:disabled) {
   background: var(--color-accent-dark);
-  box-shadow: 0 4px 14px rgba(217, 113, 60, 0.3);
+  box-shadow: 0 4px 14px rgba(90, 166, 50, 0.3);
 }
 .btn-block {
   width: 100%;

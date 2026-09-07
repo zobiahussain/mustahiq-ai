@@ -66,10 +66,10 @@ describe('staff portal interactions', () => {
   it('renders every primary route without a runtime error', async () => {
     const user = await login();
     for (const [label, heading] of [
-      ['Beneficiaries', 'Every person. One profile.'], ['Discovery review', 'Potential support, ready for review.'],
-      ['Outreach & verification', 'Conversations that confirm care.'], ['Ranking & allocation', 'Prioritize need. Allocate with care.'],
-      ['Programs & criteria', 'Clear criteria. Consistent care.'], ['Duplicate review', 'One person, one clear record.'],
-      ['Department reports', 'See the support taking shape.'], ['Staff assistant', 'A helping hand for your casework.'],
+      ['Beneficiaries', 'Beneficiaries'], ['Discovery review', 'Suggested program matches'],
+      ['Outreach & verification', 'Outreach & verification'], ['Ranking & allocation', 'Rank verified need, allocate within budget'],
+      ['Programs & criteria', 'Programs & criteria'], ['Duplicate review', 'Duplicate review'],
+      ['Department reports', 'Department reports'], ['Staff assistant', 'Program criteria assistant'],
     ]) {
       const nav = screen.getByRole('navigation', { name: 'Main navigation' });
       await user.click(within(nav).getByRole('link', { name: new RegExp(label.replace('&', '&')) }));
