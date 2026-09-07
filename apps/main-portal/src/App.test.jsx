@@ -7,14 +7,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
-const mock = vi.hoisted(() => ({ api: vi.fn(), hasSession: vi.fn(() => false), setSession: vi.fn() }));
+const mock = vi.hoisted(() => ({ api: vi.fn(), streamApi: vi.fn(), hasSession: vi.fn(() => false), setSession: vi.fn() }));
 vi.mock('./api', () => mock);
 let state;
 const programId = '11111111-1111-4111-8111-111111111111';
 const profileId = '22222222-2222-4222-8222-222222222222';
 const definitions = { income_inverse: '1 − min(verified income / PKR 50,000, 1)', dependents: 'min(dependents / 10, 1)', disability: 'Confirmed disability', no_prior_assistance: 'Prior assistance factor', school_age_children: 'School-age children factor' };
 function fixture() {
-  return { demo_mode: true, staff: { full_name: 'Ayesha Khan', role: 'super_admin' }, factor_definitions: definitions,
+  return { demo_mode: true, staff: { full_name: 'Rayan', role: 'super_admin' }, factor_definitions: definitions,
     departments: [{ id: '33333333-3333-4333-8333-333333333333', name: 'Education' }],
     profiles: [{ id: profileId, full_name: 'Fatima Bibi', district: 'Lahore', monthly_income: 15000, household_size: 5, dependents: 3, school_age_children: 2, created_at: '2026-09-07T10:00:00Z', consent_given: true }],
     programs: [{ id: programId, name: 'Education Support', domain: 'education', description: 'Synthetic program', active: true, department_id: '33333333-3333-4333-8333-333333333333', budget_per_cycle: 150000, capacity_per_cycle: 6, cycle_frequency_days: 14, verification_valid_days: 90,
@@ -37,12 +37,20 @@ beforeEach(() => {
     if (path === '/assistant') return { answer: 'These documents support the answer.', mode: 'source_lookup', sources: [{ id: 'c1', program_id: programId, program_name: 'Education Support', text: state.criteria[0].chunk_text }] };
     return {};
   });
+  mock.streamApi.mockImplementation(async (path, { onEvent }) => {
+    if (path === '/support/chat/stream') {
+      onEvent({ type: 'meta', sources: [{ id: 'c1', program_id: programId, program_name: 'Education Support', text: state.criteria[0].chunk_text }] });
+      onEvent({ type: 'token', text: 'Education Support requires ' });
+      onEvent({ type: 'token', text: 'CNIC and an income statement.' });
+      onEvent({ type: 'done' });
+    }
+  });
 });
 afterEach(cleanup);
 async function login() {
   const user = userEvent.setup(); render(<App/>);
   await user.click(await screen.findByRole('button', { name: /Enter demo workspace/i }));
-  await screen.findByRole('heading', { name: 'Welcome back, Ayesha.' }); return user;
+  await screen.findByRole('heading', { name: 'Welcome back.' }); return user;
 }
 
 describe('staff portal interactions', () => {
@@ -50,6 +58,10 @@ describe('staff portal interactions', () => {
     await login();
     expect(screen.getByText(/People, budgets, and program policies are fictional/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Registered beneficiaries/ }).textContent).toContain('1');
+  });
+  it('does not show the public support chatbot option', async () => {
+    render(<App/>);
+    expect(screen.queryByRole('button', { name: /Open Alkhidmat support chatbot/i })).toBeNull();
   });
   it('renders every primary route without a runtime error', async () => {
     const user = await login();
