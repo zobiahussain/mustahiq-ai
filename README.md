@@ -31,16 +31,6 @@ Two products, one platform:
 - Direct browsing/search of the marketplace, independent of matching
 - Three business models, zero fees — beneficiaries trade with each other, not with a platform
 
-## Screenshots
-
-| Staff portal | Marketplace |
-|---|---|
-| ![Staff dashboard](submission/screenshots/staff-dashboard.png) | ![Marketplace home](submission/screenshots/market-home.png) |
-| ![Ranking cycle](submission/screenshots/staff-ranking.png) | ![Marketplace filters](submission/screenshots/market-filters.png) |
-
-Full set in [`submission/screenshots/`](submission/screenshots) ·
-Pitch deck: [`submission/Mustahiq_AI_Presentation.pdf`](submission/Mustahiq_AI_Presentation.pdf)
-
 ## How the AI works
 
 Every layer uses the cheapest tool that is actually correct for the job:
@@ -102,7 +92,6 @@ packages/
   data/               Supabase schema, synthetic datasets, feature builders
 workflows/            Trigger registry + the two scheduled jobs
 artifacts/            Trained XGBoost scorer + metadata
-submission/           Presentation (PDF/PPTX) + screenshots
 .github/workflows/    CI: lint, frontend builds, offline tests
 render.yaml           Deployment blueprint (free tier throughout)
 ```

@@ -26,6 +26,9 @@ dist/
 # Data exports -- point-in-time snapshots for review, not source
 packages/data/exports/
 
+# Hackathon submission materials (deck, screenshots) -- delivered separately
+submission/
+
 
 # Editor / OS
 .vscode/
