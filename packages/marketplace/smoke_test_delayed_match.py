@@ -72,6 +72,7 @@ def main():
     draft = enrich_listing_text(bilal_id, "چمڑا فراہم کرتا ہوں")  # "I supply leather"
     listing_id = save_listing(
         beneficiary_id=bilal_id,
+        trade_category="Manufacturing",
         role="supplier",
         product_or_service_en=draft["product_or_service_en"],
         product_or_service_original=draft["product_or_service_original"],
