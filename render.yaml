@@ -1,0 +1,62 @@
+# Render blueprint — free tier throughout (SRS 7.1). Deploys the one API
+# service plus the two scheduled jobs (triggers 8 and 9). Secrets are set in
+# the Render dashboard, never here: DATABASE_URL, SUPABASE_URL,
+# SUPABASE_ANON_KEY, GROQ_API_KEY, GROQ_API_KEY_FALLBACK, JWT/demo secrets.
+#
+# The frontends (apps/main-portal, apps/marketplace-portal) are static Vite
+# builds — host them wherever; they only need VITE_API_BASE pointed here.
+
+services:
+  # Marketplace API at /, staff portal at /staff (services/api/unified.py).
+  - type: web
+    name: mustahiq-api
+    runtime: python
+    plan: free
+    rootDir: services/api
+    buildCommand: pip install -r requirements-staff.txt -r requirements.txt && pip install -r ../../packages/rag/requirements.txt
+    startCommand: uvicorn unified:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src/packages:/opt/render/project/src/packages/rag:/opt/render/project/src/packages/marketplace
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_API_KEY_FALLBACK
+        sync: false
+
+  # Trigger 8 — bi-weekly per-programme ranking cycle. Ranks the verified
+  # pool and stops at status='ranked'; a human reviews and allocates.
+  - type: cron
+    name: mustahiq-ranking-cycles
+    runtime: python
+    plan: free
+    rootDir: .
+    schedule: "0 6 * * 1"   # 06:00 UTC every Monday; the job itself no-ops
+                             # any programme not yet due per cycle_frequency_days
+    buildCommand: pip install -r services/api/requirements-staff.txt
+    startCommand: python -m workflows.run ranking-cycles
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src/services/api:/opt/render/project/src/packages:/opt/render/project/src/packages/rag
+      - key: DATABASE_URL
+        sync: false
+
+  # Trigger 9 — daily marketplace expiry sweep (7-day matches, 6-month listings).
+  - type: cron
+    name: mustahiq-marketplace-sweep
+    runtime: python
+    plan: free
+    rootDir: .
+    schedule: "30 2 * * *"   # 02:30 UTC daily
+    buildCommand: pip install psycopg2-binary python-dotenv
+    startCommand: python -m workflows.run marketplace-sweep
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src/packages/marketplace
+      - key: DATABASE_URL
+        sync: false

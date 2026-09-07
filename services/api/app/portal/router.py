@@ -227,6 +227,19 @@ def rank(program_id: UUID, db=Depends(get_db), staff=Depends(current_staff)):
     return record
 
 
+@router.post('/cycles/run-due')
+def run_due_cycles(db=Depends(get_db), staff=Depends(current_staff)):
+    """Trigger 8, on demand. Ranks every program whose bi-weekly cycle is due
+    and leaves each at 'ranked' for review. The same job runs unattended via
+    packages/workflows (Render cron); this endpoint is for the demo and for a
+    super-admin who wants to run the batch now."""
+    if staff['role'] != 'super_admin':
+        raise HTTPException(403, 'Only a super administrator can run the scheduled ranking batch.')
+    result = s.run_due_cycles(db, actor=staff)
+    db.commit()
+    return result
+
+
 @router.post('/cycles/{cycle_id}/candidates/{candidate_id}')
 def approve(cycle_id: UUID, candidate_id: UUID, body: Approval, db=Depends(get_db), staff=Depends(current_staff)):
     require_admin(staff)

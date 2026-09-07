@@ -512,8 +512,18 @@ owners is in [Team_Work_Division.md](Team_Work_Division.md).
   and listings. Both are time-based, so no event can cover them.
 
 An LLM never decides which step runs next — control flow is fixed, and the model only
-generates text within a step. This is why the trigger layer is a workflow engine rather
-than an agent graph.
+generates text within a step.
+
+> **Implementation note (7 Sep 2026).** The fixed control flow above is exactly why the
+> shipped version uses **no workflow engine**: with no step ever choosing the next step,
+> LlamaIndex Workflows (built for multi-step LLM agents) earns nothing over plain function
+> calls. So `workflows/` is a thin layer — `workflows/triggers.py` is the authoritative
+> registry of all 9 triggers (what each does, how it fires, the module it lives in), the 7
+> event triggers run inline inside the API request that causes them (including the 5/6
+> re-scans — hackathon-scale, still fast), and the 2 scheduled jobs run from
+> `python -m workflows.run` on Render cron (`render.yaml`). The "dispatched concurrently"
+> claim is aspirational: registration-time discovery + dedup currently run sequentially and
+> are fast enough that it hasn't mattered.
 
 ## 8. Governance & Boundaries
 

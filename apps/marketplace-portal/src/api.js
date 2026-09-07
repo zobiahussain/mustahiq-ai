@@ -27,11 +27,11 @@ async function asJson(response) {
 // Harmless to send otherwise; the backend just ignores it. Real
 // self-registration doesn't exist in this product -- this is a testing
 // convenience standing in for what a loan officer would have entered.
-export async function requestOtp(phone, testProfile = {}) {
+export async function requestOtp(phone) {
   const res = await fetch(`${API_BASE}/auth/request-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone, ...testProfile }),
+    body: JSON.stringify({ phone }),
   });
   return asJson(res);
 }

@@ -24,7 +24,7 @@ cd apps/main-portal
 ..\..\.tools\node.exe ..\..\.tools\package\bin\npm-cli.js run dev
 ```
 
-Open `http://127.0.0.1:5174` and choose `Enter demo workspace`.
+Open `http://127.0.0.1:5174` and choose **Enter the workspace**.
 
 ## Live Supabase Mode
 

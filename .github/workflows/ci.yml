@@ -43,37 +43,69 @@ jobs:
       # (a NameError ruff's F821 check would also have surfaced, instead
       # of it silently misbehaving at request time). Not a style
       # preference -- these are real bugs this exact codebase produced.
-      # Python files only -- packages/ and services/ are this project's
-      # Python code; the apps/ folders are React/JSX (a separate build
-      # check, see frontend-build below), not something a Python linter
+      # Python files only -- packages/, services/ and workflows/ are this
+      # project's Python code; the apps/ folders are React/JSX (a separate
+      # build check, see frontend-build below), not something a Python linter
       # has any business scanning.
       - name: Run ruff (undefined names, unused imports, syntax errors)
-        run: ruff check --select F,E9 packages/ services/ 2>&1 || true
-        # `|| true` for now: this is CI's FIRST run against a codebase
-        # that's never been linted before, so it may well flag pre-existing
-        # findings that need a deliberate pass to clean up, not a build
-        # that should go red on day one for things nobody's looked at yet.
-        # Remove `|| true` once that pass happens, so new findings actually
-        # block a merge -- tracked, not silently permanent.
+        run: ruff check --select F,E9 packages/ services/ workflows/
+        # The one-time cleanup pass this comment used to wait for happened
+        # (Sep 2026) -- F,E9 is clean, so this now HARD-FAILS on a new
+        # finding instead of `|| true`. If a helper/smoke script trips it,
+        # fix the script or add a scoped `# noqa`, don't re-add `|| true`.
 
   frontend-build:
     runs-on: ubuntu-latest
+    # A build failure here means broken JSX or a bad import made it into a
+    # commit -- exactly the kind of thing a fast, free check should catch
+    # before it reaches a real device during a demo. Both portals now, not
+    # just the marketplace: the staff portal (apps/main-portal) also ships
+    # to a real screen and has a vitest suite worth running.
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [marketplace-portal, main-portal]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: apps/marketplace-portal/package-lock.json
+          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
       - name: Install dependencies
-        working-directory: apps/marketplace-portal
+        working-directory: apps/${{ matrix.app }}
         run: npm ci
-      # A build failure here means broken JSX or a bad import made it into
-      # a commit -- exactly the kind of thing a fast, free check should
-      # catch before it reaches a real device during a demo.
       - name: Build
-        working-directory: apps/marketplace-portal
+        working-directory: apps/${{ matrix.app }}
         run: npm run build
+      # main-portal has a vitest suite (DOM interaction checks, no network);
+      # marketplace-portal has no test script, so guard on its presence.
+      - name: Unit tests (if the app defines a test script)
+        working-directory: apps/${{ matrix.app }}
+        run: npm run test --if-present
+
+  unit-tests:
+    # The offline Python suites: no database, no network, no LLM. The
+    # staff-portal integration suite (services/api/tests/test_staff_workflow.py)
+    # is deliberately NOT here -- it re-seeds ~180 synthetic beneficiaries per
+    # test and takes minutes; run it locally.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          pip install -r packages/eligibility/requirements.txt
+          pip install pytest pytest-subtests
+      - name: Run offline unit tests
+        run: |
+          PYTHONPATH=packages:services/api python -m pytest -q \
+            packages/eligibility/tests \
+            packages/dedup/tests \
+            services/api/tests/test_rubric.py \
+            workflows/tests
 
   smoke-tests:
     # See the file-level comment above -- manual only, on purpose.
