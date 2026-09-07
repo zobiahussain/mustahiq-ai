@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 import unittest
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PACKAGES_DIR = REPO_ROOT / "packages"
+if str(PACKAGES_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGES_DIR))
 
 from app.services.eligibility_matching import (
     discovery_program_from_row,

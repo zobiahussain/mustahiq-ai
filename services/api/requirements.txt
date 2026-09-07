@@ -6,4 +6,7 @@ psycopg2-binary>=2.9
 python-multipart>=0.0.12
 requests>=2.31          # smoke_test_new_endpoints.py -- real HTTP calls against a running server
 pydantic-settings>=2.6
+sqlalchemy>=2.0          # core/db.py engine + Session used across app/services and routers
+httpx>=0.27             # core/auth.py Supabase token verification over HTTP
+rapidfuzz>=3.6          # services/duplicate_detection.py fuzzy name/phone matching
 -r ../../packages/eligibility/requirements.txt

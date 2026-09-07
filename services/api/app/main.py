@@ -11,7 +11,7 @@ if str(PACKAGES_DIR) not in sys.path:
 
 from eligibility.persistence import load_scorer
 
-from app.routers import health, beneficiaries, matching, duplicate_flags
+from app.routers import health, beneficiaries, matching, duplicate_flags, programs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +25,7 @@ app.include_router(health.router)
 app.include_router(beneficiaries.router)
 app.include_router(matching.router)
 app.include_router(duplicate_flags.router)
+app.include_router(programs.router)
 
 @app.get("/")
 def root():

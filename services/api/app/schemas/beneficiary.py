@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Optional
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class BeneficiaryCreate(BaseModel):
@@ -13,6 +13,36 @@ class BeneficiaryCreate(BaseModel):
     household_size: Optional[int] = None
     dependents: Optional[int] = None
     monthly_income: Optional[float] = None
+
+
+class BeneficiaryUpdate(BaseModel):
+    """Partial profile edit; a change here re-fires discovery (trigger 1)."""
+
+    full_name: Optional[str] = None
+    cnic: Optional[str] = None
+    phone: Optional[str] = None
+    district: Optional[str] = None
+    city: Optional[str] = None
+    cluster_id: Optional[str] = None
+    household_size: Optional[int] = None
+    dependents: Optional[int] = None
+    school_age_children: Optional[int] = None
+    marital_status: Optional[str] = None
+    monthly_income: Optional[float] = None
+    employment_status: Optional[str] = None
+    owns_home: Optional[bool] = None
+    education_level: Optional[str] = None
+    has_disability: Optional[bool] = None
+    chronic_illness_flag: Optional[bool] = None
+    date_of_birth: Optional[date] = None
+    is_orphan: Optional[bool] = None
+    prior_assistance_count: Optional[int] = None
+
+    @model_validator(mode="after")
+    def at_least_one_field_set(self) -> "BeneficiaryUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        return self
 
 
 class BeneficiaryResponse(BaseModel):

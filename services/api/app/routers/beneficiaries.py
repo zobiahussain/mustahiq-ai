@@ -1,19 +1,45 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_staff
 from app.core.db import get_db
-from app.schemas.beneficiary import BeneficiaryCreate, BeneficiaryDetail, BeneficiaryResponse
+from app.core.scorer import get_eligibility_scorer
+from app.schemas.beneficiary import (
+    BeneficiaryCreate,
+    BeneficiaryDetail,
+    BeneficiaryResponse,
+    BeneficiaryUpdate,
+)
 from app.services.duplicate_detection import check_duplicates
-from app.services.eligibility_matching import refresh_beneficiary_matches
+from app.services.eligibility_workflows import on_profile_created_or_updated
 from eligibility.persistence import SavedScorer
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
 
-
-def get_eligibility_scorer(request: Request) -> SavedScorer:
-    return request.app.state.eligibility_scorer
+UPDATABLE_FIELDS = (
+    "full_name",
+    "cnic",
+    "phone",
+    "district",
+    "city",
+    "cluster_id",
+    "household_size",
+    "dependents",
+    "school_age_children",
+    "marital_status",
+    "monthly_income",
+    "employment_status",
+    "owns_home",
+    "education_level",
+    "has_disability",
+    "chronic_illness_flag",
+    "date_of_birth",
+    "is_orphan",
+    "prior_assistance_count",
+)
 
 
 @router.get("/", response_model=list[BeneficiaryDetail])
@@ -70,9 +96,51 @@ def create_beneficiary(
 
     check_duplicates(db, new_profile_id=row.id, full_name=row.full_name, phone=row.phone, cnic=row.cnic)
     try:
-        refresh_beneficiary_matches(db, row.id, scorer)
+        on_profile_created_or_updated(db, row.id, scorer)
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"eligibility configuration error: {error}") from error
 
     return dict(row._mapping)
+
+
+@router.patch("/{beneficiary_id}", response_model=BeneficiaryDetail)
+def update_beneficiary(
+    beneficiary_id: str,
+    payload: BeneficiaryUpdate,
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+    scorer: SavedScorer = Depends(get_eligibility_scorer),
+):
+    try:
+        parsed_beneficiary_id = UUID(beneficiary_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="beneficiary_id must be a UUID") from error
+
+    updates = payload.model_dump(exclude_unset=True)
+
+    set_clauses = [f"{field} = :{field}" for field in UPDATABLE_FIELDS if field in updates]
+    set_clauses.append("updated_at = now()")
+    parameters = {"beneficiary_id": parsed_beneficiary_id, **updates}
+
+    row = db.execute(
+        text(f"""
+            update beneficiary_profiles
+            set {', '.join(set_clauses)}
+            where id = :beneficiary_id
+            returning *
+        """),
+        parameters,
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Beneficiary not found")
+    db.commit()
+
+    # Trigger 1 (profile updated): re-discover against every active programme.
+    try:
+        on_profile_created_or_updated(db, parsed_beneficiary_id, scorer)
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"eligibility configuration error: {error}") from error
+
+    return dict(row._mapping) if hasattr(row, "_mapping") else dict(row)

@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import sys
 import unittest
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PACKAGES_DIR = REPO_ROOT / "packages"
+if str(PACKAGES_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGES_DIR))
 
 from app.services.eligibility_workflows import (
     on_profile_created_or_updated,
