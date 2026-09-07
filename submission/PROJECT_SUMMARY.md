@@ -67,27 +67,30 @@ the slide.
 ### Per-slide talking points (mixed panel — keep it plain)
 
 1. **Title** — "Al-Khidmat helps millions. The hard part isn't wanting to help — it's
-   deciding who gets limited help, and being able to explain why."
-2. **Problem** — one household can qualify for several programmes but only one gets
-   checked; "why them?" has no written answer; a beneficiary who starts a business is left
-   alone when the loan ends.
+   deciding who, among everyone eligible, needs it most, and being able to explain why."
+2. **Problem** — frame it as the universal hard problem, **not** a critique of Al-Khidmat:
+   ranking real need across a full pool is harder than checking eligibility; a "no" needs a
+   consistent reason; someone may qualify for help they never hear about; a financed
+   business still needs a network. "These questions come with the work."
 3. **What we built** — two front doors (staff / beneficiary), one engine underneath.
 4. **Eligibility pipeline** — five stages, and a human decides at every gate. Rules
    *eliminate*; the model only *ranks confidence*. Nobody is auto-enrolled.
 5. **Fairness** — the rubric is shown to staff, weight by weight; entry path is recorded
    but can never enter the maths; every decision has a plain-language reason.
 6. **The confidence model** — XGBoost on 15,000 synthetic profiles, held-out ROC-AUC ≈ 0.76.
-   No LLM in scoring, no training on real people, never decides funding. Deliberately
-   narrow — that's the point.
+   No LLM in scoring, no training on real people, never decides funding — it does one
+   measurable job.
 7. **Marketplace** — loan → describe your business by voice → matched across three models
    (supply chain / employment / joint venture) → both sides notified → they deal directly.
    No fees, no commission.
 8. **The product** — both screens on this slide are the real apps on synthetic demo data.
    41 + 33 automated tests, plus marketplace smoke tests.
 9. **Constraints** — free tier only, every answer cited, any language in, staff-operated.
-10. **Impact** — before/after: one programme → all of them in milliseconds; memory →
-    a snapshotted rubric; no record → a reason for every decision.
-11. **Close** — "From aid, to auditable aid, to self-reliance."
+10. **The value it adds** — what the platform puts *on top of* the existing process: every
+    programme scored in one pass; one snapshotted rubric applied identically; a
+    plain-language reason on every suggestion and rank; a bridge from the loan to a
+    network. End on: "It informs the decision — it does not make it."
+11. **Close** — "Clearer decisions, a bridge to self-reliance."
 
 ---
 
