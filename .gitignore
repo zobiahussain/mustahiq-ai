@@ -1,6 +1,10 @@
 # Original docx source docs — markdown versions in docs/ are the tracked copies
 docs/*.docx
 
+# Markdown documentation, except README files
+*.md
+!README.md
+
 # Python
 __pycache__/
 *.pyc
