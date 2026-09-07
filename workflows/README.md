@@ -11,20 +11,19 @@ solves multi-step LLM-agent orchestration and none of these triggers are that
 |---|---|
 | [`triggers.py`](triggers.py) | The authoritative list of all 9 triggers — what each does, how it fires, and the exact module its logic lives in. `python -m workflows.triggers` prints it. |
 | [`scheduled.py`](scheduled.py) | The two scheduled jobs as importable functions: `run_ranking_cycles()` (trigger 8) and `run_marketplace_sweep()` (trigger 9). |
-| [`run.py`](run.py) | The CLI a Render cron invokes: `python -m workflows.run ranking-cycles` / `marketplace-sweep`. |
+| [`run.py`](run.py) | The CLI a scheduler (or you) invokes: `python -m workflows.run ranking-cycles` / `marketplace-sweep`. |
 
 ### Events (triggers 1–7)
 
 Fire **inline**, inside the API request that causes them — see `triggers.py`
 for where each lives. Registration-time discovery is milliseconds and
 deterministic; even the re-scan triggers (5, 6) run inline because there is no
-queue/worker infra on a single Render free-tier service. This is the working
+queue/worker infra and the caseload is hackathon-scale. This is the working
 answer to CLAUDE.md open question #3 for the hackathon.
 
 ### Scheduled (triggers 8, 9)
 
-Have no event to hang off. `render.yaml` (repo root) defines them as Render
-cron services:
+Have no event to hang off. Run them on any scheduler (cron / Windows Task Scheduler), or by hand:
 
 * **8 — ranking cycle**, bi-weekly. For every active programme whose cycle is
   due (`cycle_frequency_days` since its last `run_at`, and no open cycle), it

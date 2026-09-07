@@ -7,6 +7,6 @@ actually lives.
 
 The two scheduled jobs (8, the bi-weekly per-programme ranking cycle; 9, the
 daily marketplace expiry sweep) have no event to hang off, so they run from
-:mod:`scheduled` — invoked by ``python -m workflows.run`` on a Render cron
-schedule (see ``render.yaml``).
+:mod:`scheduled` — invoked by ``python -m workflows.run`` on any scheduler.
+schedule.
 """

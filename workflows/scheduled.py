@@ -1,7 +1,7 @@
 """The two scheduled jobs (triggers 8 and 9).
 
 Kept as plain importable functions so they can be unit-tested and called from
-anywhere; ``workflows/run.py`` is the thin CLI that a Render cron invokes.
+anywhere; ``workflows/run.py`` is the thin CLI a scheduler (or you) invokes.
 
 Neither job makes an allocation or contacts anyone:
 

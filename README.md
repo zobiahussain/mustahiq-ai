@@ -58,8 +58,11 @@ packages/
   dedup/                CNIC-first, then RapidFuzz name/phone comparison
   data/                 SQL schema, synthetic data generator, the 57-feature contract
 workflows/              The 9-trigger registry + the 2 scheduled jobs (python -m workflows.run)
-render.yaml             Render blueprint — the API service + the two cron jobs
 ```
+
+The 7 event triggers run inline in the API request that causes them; the 2 scheduled jobs
+(bi-weekly ranking cycle, daily marketplace sweep) run from `python -m workflows.run` —
+on any scheduler, or by hand during the demo.
 
 The team's design docs (SRS, architecture, flows, the marketplace spec) are kept
 internally rather than in the repo; this README and each folder's `README.md` are the
@@ -78,8 +81,9 @@ public overview.
 
 ## Stack
 
-Python 3.11+ · FastAPI + Pydantic v2 · Supabase Postgres + pgvector · Groq (generation
-only) · React + Vite · Render (hosting + cron). Free tiers throughout, no GPU.
+Python 3.11+ · FastAPI + Pydantic v2 · Postgres + pgvector (Supabase) · Groq (generation
+only, free tier) · local `sentence-transformers` embeddings · React + Vite. Runs on a
+laptop — no GPU, no cloud hosting needed for the demo.
 
 ## Tests
 

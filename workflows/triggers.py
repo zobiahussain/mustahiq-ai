@@ -8,11 +8,11 @@ So "the trigger layer" is really two things:
 * **Events (1-7)** -- fire synchronously inside the API request that causes
   them. Registration-time discovery is milliseconds and deterministic; the
   re-scan triggers (5, 6) touch every beneficiary but still run inline because
-  no queue/worker infra exists on a single Render free-tier service. This is
+  no queue/worker infra exists and the caseload is hackathon-scale. This is
   the answer to CLAUDE.md open question #3 for the hackathon: inline events,
   cron for the scheduled jobs.
 * **Scheduled (8, 9)** -- no event to hang off, so :mod:`workflows.scheduled`
-  runs them from ``python -m workflows.run`` on a Render cron schedule.
+  runs them from ``python -m workflows.run`` on any scheduler.
 
 ``TRIGGERS`` below is the authoritative list (Team_Work_Division.md section 3,
 End_to_End_Flows.md).
@@ -63,11 +63,11 @@ TRIGGERS: tuple[Trigger, ...] = (
             "Marketplace matching (3 models -> filter -> similarity -> proximity), then notify both parties by SMS/email. Runs as a FastAPI BackgroundTask.",
             "packages/marketplace/matching_pipeline.py::match_and_notify"),
     Trigger(8, "Ranking cycle due", "scheduled",
-            "Render cron (bi-weekly) -- python -m workflows.run ranking-cycles",
+            "scheduled (bi-weekly) -- python -m workflows.run ranking-cycles",
             "For every active programme whose cycle is due: expire stale verifications, score and rank the verified pool with the transparent rubric. Stops at status='ranked' -- a human reviews and allocates.",
             "workflows/scheduled.py::run_ranking_cycles -> services/api/app/portal/service.py::run_due_cycles"),
     Trigger(9, "Daily marketplace sweep", "scheduled",
-            "Render cron (daily) -- python -m workflows.run marketplace-sweep",
+            "scheduled (daily) -- python -m workflows.run marketplace-sweep",
             "Expire marketplace matches unanswered for 7 days and listings unconfirmed for 6 months.",
             "workflows/scheduled.py::run_marketplace_sweep -> packages/marketplace/lifecycle.py"),
 )
