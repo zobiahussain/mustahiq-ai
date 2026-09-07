@@ -420,6 +420,14 @@ create table logistics_routes (
 create index on logistics_routes (from_district, to_district);
 create index on logistics_routes (listing_id);
 
+-- one row per (operator, corridor, vehicle, capacity) -- an operator adding
+-- the identical route twice is a mistake, not a second route (migration 0002).
+create unique index if not exists logistics_routes_unique_route
+    on logistics_routes (
+        listing_id, from_district, to_district,
+        (coalesce(vehicle_type, '')), (coalesce(capacity_description, ''))
+    );
+
 
 -- ============================================================
 -- 7. LISTING PARTICIPANTS
