@@ -38,8 +38,7 @@ Open **http://127.0.0.1:5174** → *Enter the workspace*, then walk the pipeline
 beneficiary → *Discovery review* → *Outreach & verification* → *Ranking & allocation*.
 
 The marketplace app (`apps/marketplace-portal` + `services/api/main.py`) additionally needs
-a Postgres + pgvector database via `DATABASE_URL` — see `.env.example` and
-`docs/Local_Setup_And_Testing.md`.
+a Postgres + pgvector database via `DATABASE_URL` — see `.env.example`.
 
 ## Repo layout
 
@@ -60,8 +59,11 @@ packages/
   data/                 SQL schema, synthetic data generator, the 57-feature contract
 workflows/              The 9-trigger registry + the 2 scheduled jobs (python -m workflows.run)
 render.yaml             Render blueprint — the API service + the two cron jobs
-docs/                   SRS, Architecture, flows, marketplace spec, setup & testing
 ```
+
+The team's design docs (SRS, architecture, flows, the marketplace spec) are kept
+internally rather than in the repo; this README and each folder's `README.md` are the
+public overview.
 
 ## How the AI is used
 
@@ -87,5 +89,4 @@ python -m pytest services/api/tests/test_staff_workflow.py    # slower: re-seeds
 cd apps/main-portal && npm test
 ```
 
-Full requirements, architecture and the trigger model are in [`docs/`](docs). `CLAUDE.md`
-carries the working notes and the few remaining team decisions.
+Each `packages/*/README.md` names what that module does and depends on.

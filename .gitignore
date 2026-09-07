@@ -33,3 +33,9 @@ Thumbs.db
 .tools/
 .venv/
 apps/main-portal/dist/
+
+# Internal planning / working docs — not part of the public submission.
+# Kept on disk and maintained; the public face is README.md.
+/docs/
+/CLAUDE.md
+/llm inference.md
