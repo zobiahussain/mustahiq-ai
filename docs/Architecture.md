@@ -32,8 +32,10 @@ AL-KHIDMAT STAFF                        BENEFICIARIES
   - Hard rule check (plain Python) -> eliminates
   - XGBoost confidence score      -> ranks the rest
   - NO LLM, NO retrieval in this path (deterministic)
-  - programs needing explicit application (microfinance)
-    are scored but SUPPRESSED, never pushed to anyone
+  - programs flagged requires_explicit_application are scored
+    but SUPPRESSED, never pushed to anyone (microfinance was the
+    reason for this flag; it is now marketplace-only, not an
+    eligibility program, and none of the 7 seeded areas set it)
   - Marketplace business matching (3 models)
         |
         v

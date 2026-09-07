@@ -17,7 +17,7 @@ fail / incomplete         -> do not call the model
 pass                      -> features (X) -> XGBoost -> confidence: 0.0 to 1.0
 ```
 
-The vector has **49 fixed float64 features**. Their order is saved alongside
+The vector has **57 fixed float64 features**. Their order is saved alongside
 every trained model artifact.
 
 ## Missing-data policy
@@ -47,12 +47,16 @@ Each source field creates its value and a missingness flag.
 | `prior_assistance_count`         | `prior_assistance_count`, `prior_assistance_count_missing` | Previous support context; never automatic exclusion.               |
 | Derived age from `date_of_birth` | `age`, `age_missing`                                       | Child, youth, and working-age context without storing a stale age. |
 
-### Derived household and policy-fit signals — 6 features
+### Derived household and policy-fit signals — 14 features
 
 | Feature                       | Paired flag                           | Calculation                                                       | Purpose                                                                |
 | ----------------------------- | ------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `income_per_head`             | `income_per_head_missing`             | `monthly_income / household_size`                                 | Compares income fairly across household sizes.                         |
 | `dependents_to_earners_ratio` | `dependents_to_earners_ratio_missing` | `dependents / max(household_size - dependents, 1)`                | Demo proxy for dependency pressure, not a literal earner count.        |
+| `dependency_share`            | `dependency_share_missing`            | `dependents / household_size`                                     | Fraction of the household that cannot self-support; a depth-3 tree cannot synthesise this from the two raw columns. |
+| `school_age_ratio`            | `school_age_ratio_missing`            | `school_age_children / household_size`                            | Education-cost pressure relative to household size.                    |
+| `vulnerability_count`         | `vulnerability_count_missing`         | Count of confirmed markers among `has_disability`, `chronic_illness_flag`, `is_orphan` | Compound vulnerability in one number; missing only when all three markers are unknown. |
+| `is_sole_earner`              | `is_sole_earner_missing`              | `1.0` if `household_size - dependents <= 1`                       | Single-earner household flag.                                         |
 | `avg_numeric_rule_slack`      | `avg_numeric_rule_slack_missing`      | Average normalized distance from `<=` / `>=` programme thresholds | Strength of fit inside the policy boundary, never an allocation score. |
 
 ### Boolean vulnerability and housing signals — 8 features
@@ -101,7 +105,15 @@ Exactly one indicator is `1.0` for each profile/programme pair.
 - `program_domain_wash`
 - `program_domain_orphan_care`
 - `program_domain_bano_qabil`
-- `program_domain_islamic_microfinance`
+- `program_domain_community_services`
+
+The seven values are Al-Khidmat's real areas of work
+(alkhidmat.org/donations/area-of-work). Islamic Microfinance is **not** a
+domain here: a loan is not something a beneficiary is "eligible" for without
+applying, so it is handled only in the marketplace module. Programme
+sub-programmes (for example Thalassemia Care and Dialysis under Health) share
+their parent's domain indicator; the model separates them through the profile
+features and `avg_numeric_rule_slack`, not a dedicated column.
 
 ## Fields deliberately excluded
 
@@ -132,10 +144,24 @@ hard-rule pass               -> features (X) + verified label (y)
 ```
 
 The synthetic label probability combines lower income per household member,
-higher dependency pressure, disability/chronic-illness interaction, orphan
-status, prior assistance, programme effect, random Gaussian variation, and a
-final 10% label flip. It demonstrates an end-to-end ML pipeline; it does not
-prove real-world accuracy.
+higher dependency pressure, disability/chronic-illness interaction, orphan and
+widow status, insecure housing, informal or absent employment, low education,
+school-age children, prior assistance, a per-domain programme effect, random
+Gaussian variation, and a final label flip (`noise_rate`, 0.08). Profiles are
+drawn from a single latent "hardship" factor so the columns move together the
+way a real caseload does. It demonstrates an end-to-end ML pipeline; it does
+not prove real-world accuracy.
+
+### How much data the demo model trains on
+
+`run_model_pipeline.py` defaults to **15,000 synthetic profiles** (an earlier
+revision used 3,000). Each profile is evaluated against all 22 sub-programmes;
+every hard-rule `pass` becomes one labelled `(profile, programme)` row, so the
+15,000 profiles yield roughly 40,000–55,000 training rows. The split is an
+80/20 `StratifiedGroupKFold` grouped by profile, so no beneficiary appears in
+both train and test. The exact counts and held-out precision/recall/F1/ROC-AUC
+for the shipped artifact are written to
+`artifacts/eligibility-scorer/scorer_metadata.json` at train time.
 
 ## Future target and guardrails
 

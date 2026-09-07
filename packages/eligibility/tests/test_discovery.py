@@ -23,7 +23,6 @@ WASH = PROGRAMS["wash-program-demo"]
 EDUCATION = PROGRAMS["education-program-demo"]
 HEALTH = PROGRAMS["health-services-demo"]
 BANO_QABIL = PROGRAMS["bano-qabil-demo"]
-MICROFINANCE = PROGRAMS["islamic-microfinance-demo"]
 
 
 class RecordingScorer:
@@ -52,10 +51,14 @@ def discovery_program(
     )
 
 
-def _microfinance_pass_profile() -> BeneficiaryProfile:
+def _explicit_application_pass_profile() -> BeneficiaryProfile:
+    """A profile that clears an ordinary programme's rules -- used to prove the
+    ``requires_explicit_application`` suppression path, which is a generic
+    mechanism (any programme an admin flags), not tied to one programme.
+    """
     return BeneficiaryProfile(
         date_of_birth=date.today() - timedelta(days=30 * 365),
-        employment_status="self_employed",
+        employment_status="unemployed",
     )
 
 
@@ -95,12 +98,12 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(scorer.calls, 1)
 
     def test_explicit_application_pass_is_suppressed_with_suffix(self) -> None:
-        profile = _microfinance_pass_profile()
+        profile = _explicit_application_pass_profile()
         scorer = RecordingScorer(0.7)
 
         results = discover_profile(
             profile,
-            [discovery_program(MICROFINANCE, requires_explicit_application=True)],
+            [discovery_program(BANO_QABIL, requires_explicit_application=True)],
             scorer,
         )
 

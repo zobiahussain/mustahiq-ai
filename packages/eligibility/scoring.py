@@ -6,7 +6,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import StratifiedGroupKFold
 from xgboost import XGBClassifier
 
@@ -18,6 +24,7 @@ class EvaluationReport:
     precision: float
     recall: float
     f1: float
+    roc_auc: float
     confusion_matrix: list[list[int]]
     train_size: int
     test_size: int
@@ -80,12 +87,23 @@ def train_and_evaluate(
     model = _classifier(scale_pos_weight=negative / positive)
     model.fit(train_frame, train_labels)
     predictions = model.predict(test_frame)
+    probabilities = model.predict_proba(test_frame)[:, 1]
     matrix = confusion_matrix(test_labels, predictions, labels=[0, 1]).tolist()
+
+    # ROC-AUC is threshold-free: it measures whether the model ranks a truly
+    # verified candidate above a non-verified one, which is what discovery
+    # actually uses the confidence score for.
+    auc = (
+        float(roc_auc_score(test_labels, probabilities))
+        if len(set(test_labels)) == 2
+        else float("nan")
+    )
 
     report = EvaluationReport(
         precision=float(precision_score(test_labels, predictions, zero_division=0)),
         recall=float(recall_score(test_labels, predictions, zero_division=0)),
         f1=float(f1_score(test_labels, predictions, zero_division=0)),
+        roc_auc=auc,
         confusion_matrix=matrix,
         train_size=len(train_indices),
         test_size=len(test_indices),

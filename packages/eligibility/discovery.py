@@ -22,7 +22,7 @@ DiscoveryDomain = Literal[
     "wash",
     "orphan_care",
     "bano_qabil",
-    "islamic_microfinance",
+    "community_services",
 ]
 DiscoveryStatus = Literal["pending_review", "suppressed", "not_eligible", "incomplete"]
 SUPPRESSION_SUFFIX = (
