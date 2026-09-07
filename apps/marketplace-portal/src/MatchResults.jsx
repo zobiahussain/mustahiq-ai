@@ -29,14 +29,45 @@ import Header from "./Header.jsx";
 // asks the ONE Groq call for both languages together (reason_en +
 // reason_ur), not a second call.
 
+// POLL_INTERVAL_MS -- 6 Sep 2026, alongside backgrounding match_and_notify()
+// on the API side (see main.py listing_save()'s docstring). Matching used
+// to be done by the time this screen ever mounted (the API request itself
+// blocked on it); now it's a background task that can still be running
+// when this screen first opens, so this screen polls GET
+// /listing/{id}/matches until `pending` flips false, same signal
+// migrations/0001_matches_computed_at.sql exists for.
+const POLL_INTERVAL_MS = 3000;
+
 export default function MatchResults({ token, listingId, onBack, onSelectListing, onOpenChat }) {
   const [matches, setMatches] = useState(null);
+  const [pending, setPending] = useState(true);
+  const [noMatchExplanation, setNoMatchExplanation] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    getListingMatches(token, listingId)
-      .then((res) => setMatches(res.matches))
-      .catch((err) => setError(err.message));
+    let cancelled = false;
+    let timer = null;
+
+    async function poll() {
+      try {
+        const res = await getListingMatches(token, listingId);
+        if (cancelled) return;
+        setPending(res.pending);
+        setMatches(res.matches);
+        setNoMatchExplanation(res.no_match_explanation || null);
+        if (res.pending) {
+          timer = setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    }
+    poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [token, listingId]);
 
   async function handleDismiss(e, matchId) {
@@ -66,21 +97,48 @@ export default function MatchResults({ token, listingId, onBack, onSelectListing
 
       {error && <div className="error-banner">{error}</div>}
 
-      {matches === null && !error && (
+      {pending && !error && (
+        // Distinct from the genuinely-empty state below -- matches ARE
+        // still being computed (main.py listing_save()'s background task
+        // hasn't finished yet), not confirmed absent. Polled every
+        // POLL_INTERVAL_MS until this flips.
         <div className="stagger results-grid">
+          <p style={{ color: "var(--color-ink-soft)", marginBottom: 12 }}>
+            Still looking for the best matches for you...
+            <span className="ur" style={{ display: "block", marginTop: 2 }}>
+              آپ کے لیے بہترین مواقع تلاش کیے جا رہے ہیں...
+            </span>
+          </p>
           <div className="skeleton" />
           <div className="skeleton" />
           <div className="skeleton" />
         </div>
       )}
 
-      {matches && matches.length === 0 && (
-        <p style={{ color: "var(--color-ink-soft)" }}>
-          No opportunities yet -- we'll text you the moment someone new joins that fits.
-          <span className="ur" style={{ display: "block", marginTop: 2 }}>
-            ابھی کوئی موقع نہیں -- جیسے ہی کوئی موزوں کاروبار شامل ہوگا، ہم آپ کو بتائیں گے۔
-          </span>
-        </p>
+      {!pending && matches && matches.length === 0 && (
+        <div>
+          <p style={{ color: "var(--color-ink-soft)" }}>
+            No opportunities yet -- we'll text you the moment someone new joins that fits.
+            <span className="ur" style={{ display: "block", marginTop: 2 }}>
+              ابھی کوئی موقع نہیں -- جیسے ہی کوئی موزوں کاروبار شامل ہوگا، ہم آپ کو بتائیں گے۔
+            </span>
+          </p>
+          {/* match_diagnostics.py's explain_no_matches() -- a real,
+              specific reason instead of a dead end. One card per active
+              seeking direction that came back empty. */}
+          {noMatchExplanation && noMatchExplanation.length > 0 && (
+            <div className="stagger" style={{ marginTop: 12 }}>
+              {noMatchExplanation.map((e) => (
+                <div key={e.direction} className="card" style={{ padding: 14, marginBottom: 8 }}>
+                  <p style={{ margin: 0 }}>{e.reason_en}</p>
+                  <p className="ur" style={{ margin: "4px 0 0", fontFamily: "var(--font-ur)" }}>
+                    {e.reason_ur}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {matches && matches.length > 0 && (

@@ -5,6 +5,11 @@
 -- Run AFTER al_khidmat_core_schema.sql. Depends on
 -- beneficiary_profiles and staff_users from that file.
 --
+-- This file is a SNAPSHOT of the current structure, not a change log.
+-- Setting up a brand-new database: run this file, then run every file
+-- under packages/data/migrations/ in order (see migrations/README.md) --
+-- those carry anything added since this snapshot was last updated.
+--
 -- Embedding dimension is 768.
 --
 -- SCOPE NOTE: the marketplace runs on the beneficiary app with NO
@@ -364,6 +369,13 @@ create table store_listings (
     embedding               vector(768),  -- computed from product_or_service_en
                                           -- (+ skills_en, for an employment listing)
                                           -- -- never from the _original text
+
+    -- migrations/0001_matches_computed_at.sql, 6 Sep 2026. Set once
+    -- match_and_notify() finishes running for this listing in the
+    -- background (see services/api/main.py listing_save()) -- null means
+    -- still pending, distinguishes "matching hasn't run yet" from
+    -- "matching ran and genuinely found nothing" for the frontend.
+    matches_computed_at     timestamptz,
 
     -- listings expire so dead ones self-clean instead of
     -- accumulating

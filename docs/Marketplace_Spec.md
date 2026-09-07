@@ -36,11 +36,20 @@ on the beneficiary app, and it operates without staff involvement.
 1. A person applies for a microfinance loan at a facilitation centre. They must ask;
    microfinance is never offered proactively, because a loan creates a debt obligation.
 2. Staff takes the application on the portal and records which of Al-Khidmat's four loan
-   products funds it — **and now also picks a trade category** (one of the ten in
-   `trade_categories`, or "Not a business" for bail/medical/debt-relief loans, including
+   products funds it — **and now also picks a trade category** (one of the fifteen in
+   `trade_categories` — see `packages/data/reference_lists.md` for the full list and what
+   each one means — or "Not a business" for bail/medical/debt-relief loans, including
    the Liberation Loan) at the same moment they already record what the loan is for. This
    is a new field on the loan application, proposed by this module specifically to make
    the gate below possible — it doesn't exist in Al-Khidmat's process today.
+   Expanded from ten categories to fifteen on 6 Sep 2026 — real listings weren't finding
+   a natural home (bulk jewelry making read as neither "Handicrafts" nor comfortably
+   "Trading"; a beauty parlour, a home electrician, and a phone-repair shop were all
+   being flattened into one catch-all "Services" bucket, which was quietly defeating the
+   employment same-category matching rule described in §5.3's quality floor below, since
+   two completely unrelated trades would share a category and be treated as a safe
+   same-trade employment match). The category itself is still staff-picked and locked —
+   a beneficiary never edits it — this only changed how many options staff choose from.
 3. The loan is **approved** — Al-Khidmat's loan system records the outcome, in this
    schema a row in `microfinance_loans` (`loan_reference`, `loan_product`,
    `trade_category_id`, `stated_purpose_text`, `status`, `amount_disbursed`,
@@ -55,7 +64,7 @@ side, so it cannot re-run the assessment that already happened. What it checks i
 does a `microfinance_loans` row exist for this beneficiary with `status` `approved` or
 `disbursed`, and does that row have a `trade_category_id` set. Not income, not household
 size, not programme criteria — just "did Al-Khidmat decide to finance them into one of the
-ten trade categories."
+fifteen trade categories."
 
 `trade_category_id` being `null` is what excludes a loan that doesn't lead to a business —
 this covers the Liberation Loan, but also bail, medical, or debt-relief loans generally,
@@ -98,6 +107,16 @@ one-time code sent by SMS.
 Full schema (`beneficiary_app_accounts`, `login_otps`) is in Architecture.md §4.2.1 and
 `packages/data/schema/al_khidmat_marketplace_schema.sql`.
 
+**Resend cooldown, added 6 Sep 2026.** A phone number can request a new code only once
+every 30 seconds — not a security feature against guessing (`verify_otp()`'s
+`MAX_OTP_ATTEMPTS` already covers that), but protection against the SEND itself being
+hammered. Harmless today, since no real SMS provider is wired up yet (`auth.py`'s
+`_send_sms()` just prints), but the moment one is, an unthrottled resend is a way to run
+up a real bill against any number, correct or not — cheaper to close now than to retrofit
+once a bill exists. A number still inside its cooldown gets
+`{"otp_sent": false, "reason": "cooldown", "retry_after_seconds": N}` — an expected
+outcome, the same way "not eligible" already is, not an error.
+
 Loan product and trade category are independent. A tailor funded under a Small Business
 Loan and a tailor funded under Loan for Orphan's Mother are identical to the marketplace —
 it reads what the business does and ignores which product financed it.
@@ -109,70 +128,84 @@ clearest example — does not lead to a business, so it produces no listing.
 
 The person opens the app, already known to it (`GET /me/context` returns their name,
 district, cluster, trade category and stated purpose from the loan record — never asked
-again). This is a short card-based form, English and Urdu shown side by side, built to
-need almost nothing typed: mostly taps, two optional numbers, and exactly **one**
-free-text box — which can be filled by typing *or* by voice (added 4 Sep 2026: a record
-button transcribes via Groq's hosted Whisper, and the transcript lands in the same
-editable box typing would have, still fully editable before it goes anywhere near the
-enrichment call). This replaces an earlier fully-conversational, voice-first design where
-voice drove the *whole* interaction — this version deliberately narrows where a model
-touches the data, for reliability, while still letting voice fill the one text box.
+again).
 
-Five cards:
+**Voice-first, two screens — rebuilt 5 Sep 2026, replacing an earlier five-card
+tap-through form.** The five-card version (role, then seeking flags, then one text box,
+then two questions, then details — each its own screen) shipped first and is still
+worth understanding *why it changed*: direct feedback was that tapping through five
+screens is real friction for someone using an app like this for the first time, often
+with low literacy — and once nearly every field became a tap, semantic search stopped
+doing much real work, since almost everything could already be filtered structurally.
+"Someone just talks, in whatever words, and the system figures out the rest" is what
+actually justifies the embedding architecture existing at all — you cannot pre-build a
+structured filter for something you don't know the shape of in advance. So the design
+went back to that:
 
-| Card | Type | Captures |
-|---|---|---|
-| 1. Role | Tap, single-select | `role` |
-| 2. Looking for | Tap, multi-select | `seeking_inputs` / `seeking_workers` / `seeking_partner` / `seeking_work` |
-| 3. What you make or sell | **The one text box**, Urdu or English | Goes to the LLM call below |
-| 4. Two direct questions | Tap, always asked, no model involved | `is_remote_capable`, `output_is_physical` |
-| 5. Details — shown whenever card 2 selected anything (materials, worker, partner, or work) | Two optional numbers + the travel tap(s) relevant to what was selected | `monthly_capacity`, `price_range`, `will_deliver_outside_area` (materials), `will_relocate_for_work` (work), `will_partner_outside_district` (partner) |
+1. **Screen 1 — record or type.** One free-text box, filled by typing *or* by voice (a
+   record button transcribes via Groq's hosted Whisper, and the transcript lands in the
+   same editable box typing would have).
+2. **Screen 2 — review everything the AI drafted, plus what it's never allowed to
+   guess.** One richer LLM call (replacing the old enrichment-only call) reads the raw
+   text and drafts the *whole* listing at once — role, all four seeking flags, business
+   name, the bilingual description, skills, women-led (only if explicitly said),
+   capacity, and price range — every one of them shown back and editable, never silently
+   trusted. Beneath that, in a visually separate card, two questions are asked directly
+   every single time, with no AI-suggested default: see §3.1.
 
-`is_women_led` is a small toggle, not its own card — folds into card 1 or a final review
-screen, doesn't need the friction of a dedicated step.
+There is no separate path based on assumptions about literacy or loan size — everyone
+gets the same two screens.
 
-There is no separate path based on assumptions about literacy or loan size — everyone gets
-the same five cards.
+### 3.1 The one LLM call, and what it's deliberately never allowed to draft
 
-### 3.1 The one LLM call, and why it's the only one
-
-Every other field on the form is a tap or a number, straight into a column — no model, no
-parsing, nothing to go wrong. The one place a model earns its keep is **card 3**, and its
-job isn't translation — it's *enrichment for matching*. A thin phrase like "سلائی" makes a
-thin embedding. Expanded into "tailoring, stitching shalwar kameez and uniforms, garment
-production," it actually matches a fabric supplier searching in English.
+Its job isn't translation — it's *enrichment for matching*. A thin phrase like "سلائی"
+makes a thin embedding. Expanded into "tailoring, stitching shalwar kameez and uniforms,
+garment production," it actually matches a fabric supplier searching in English.
 
 ```python
 prompt = f"""
-Trade category: {trade_category}
-They wrote: "{raw_text}"
+A small-business owner in Pakistan recorded (or typed) a description of
+their business, in their own words, in whatever language felt natural.
+Trade category (already known, don't re-derive it): {trade_category}
 
-Return JSON:
+What they said: "{raw_text}"
+
+Read it and draft a marketplace listing. Return JSON:
 {{
-  "product_or_service_en": "expanded English description for
-     semantic matching — include the craft, typical outputs, and
-     related terms a supplier or employer would search for",
-  "product_or_service_original": "their exact words unchanged",
-  "skills_en": "comma-separated skills in English"
+  "role": "exactly one of: supplier, producer, retailer, service, logistics",
+  "seeking_inputs" / "seeking_workers" / "seeking_partner" / "seeking_work": true/false,
+  "business_name": "... or null",
+  "product_or_service_en": "expanded English description for semantic
+     matching — include the craft, typical outputs, and related terms a
+     supplier or employer would search for",
+  "product_or_service_original": "their exact words, only lightly cleaned
+     up — never invent detail they didn't say",
+  "skills_en": "comma-separated, or null",
+  "is_women_led": true/false — ONLY true if they explicitly said so,
+  "monthly_capacity": "... or null",
+  "price_range": "... or null"
 }}
 """
 ```
 
-`is_remote_capable` is deliberately **not** in this prompt. An earlier draft had the LLM
-suggest it as a pre-filled default; reverted, because this field silently controls whether
-an entire distance/proximity filter runs for the listing at all (see below) — too much to
-hang on a model guess when a plain tap costs almost nothing. It's asked directly on card 4,
-same as `output_is_physical`, which was never LLM-touched to begin with.
+`is_remote_capable` and `output_is_physical` are deliberately **never** in this prompt.
+An earlier draft had the LLM suggest `is_remote_capable` as a pre-filled default;
+reverted, because this field silently controls whether an entire distance/proximity
+filter runs for the listing at all (see §5.3) — too much to hang on a model guess when a
+plain, mandatory tap costs almost nothing. Both are asked directly, every time, in their
+own card on the review screen, with no default that lets someone skip past them
+un-answered.
 
 **On `will_partner_outside_district` — this needed fixing, not just noting.** The gate
 described in §3.3 below is a genuine *filter*, not just a ranking penalty: a candidate who
 hasn't opted into cross-cluster matching is excluded from appearing at all, the same way
 an unwilling supplier or worker is (§5, step 2, "Distance eligibility"). An earlier version
-of this design skipped card 5 entirely for partner-only listings, which meant
-`will_partner_outside_district` could never be asked and would silently stay `false`
-forever — permanently excluding that listing from every cross-cluster joint-venture match,
-not merely ranking it lower. Fixed: card 5 now shows whenever card 2 selected *anything*,
-including partner-only, asking just the one travel question relevant to what was selected.
+of the five-card design skipped its travel-question card entirely for partner-only
+listings, which meant `will_partner_outside_district` could never be asked and would
+silently stay `false` forever — permanently excluding that listing from every
+cross-cluster joint-venture match, not merely ranking it lower. Fixed, and preserved in
+this rebuild: the travel question(s) relevant to whichever seeking flags are checked
+always appear on the review screen, including partner-only.
 
 **English internally, their language everywhere they see it.** The platform-wide "English
 only" rule (SRS §7.2) governs the *matching* pipeline, not what a beneficiary is required
@@ -185,16 +218,16 @@ them and to whoever they match with). Nobody has to read or write English to use
 | Field | Purpose |
 |---|---|
 | Trade category | Already known from the loan record — not asked |
-| Product or service | `_en` (embedded, matched) + `_original` (shown to people) — card 3 |
+| Product or service | `_en` (embedded, matched) + `_original` (shown to people) — AI-drafted, editable |
 | Skills | Same `_en`/`_original` split — from the same LLM call as product/service |
-| Role | supplier, producer, retailer, service, or logistics — card 1 |
-| Capacity and price range | Optional, can stay blank — card 5 |
+| Role | supplier, producer, retailer, service, or logistics — AI-drafted, editable |
+| Capacity and price range | Optional, can stay blank — AI-drafted, editable |
 | Cluster and district | Proximity signal; already known from the loan record |
-| Seeking flags | inputs, workers, a partner, or work — card 2 |
-| Remote-capable | Plain tap, always asked, no model involved — card 4 |
-| Physical output | Plain tap, always asked, no model involved — card 4 |
-| Travel willingness | Card 5, shown for any seeking flag — asks only what's relevant |
-| Women-led | A flag, not a category — small toggle, not its own card |
+| Seeking flags | inputs, workers, a partner, or work — AI-drafted, editable |
+| Remote-capable | Plain tap, always asked, no model involved — §3.1 |
+| Physical output | Plain tap, always asked, no model involved — §3.1 |
+| Travel willingness | Shown for whichever seeking flag(s) are checked — asks only what's relevant |
+| Women-led | A flag, not a category — AI-drafted (only if explicitly said), editable |
 
 ### 3.3 Two gates before travel willingness, not one
 
@@ -246,7 +279,8 @@ livelihoods.
 
 ## 5. Matching Logic
 
-Fires whenever a listing is created or edited.
+Fires whenever a listing is created or edited — but see §5.2 on WHEN the results actually
+appear, changed 6 Sep 2026.
 
 1. **Complementary role filter** — a producer looks for suppliers, not other producers. A
    joint venture candidate looks only at others who opted in.
@@ -255,8 +289,11 @@ Fires whenever a listing is created or edited.
    they have already ruled out. Skipped for a supply-chain match when the listing's
    output isn't physical, and for an employment or joint-venture match when the listing
    is remote-capable (§3.3) — in each case, nothing to check distance against.
-3. **Vector similarity** over the listing text ranks whatever survives the filters.
-4. **Proximity weighting** reorders the result: same cluster × 1.00, adjacent district ×
+3. **Quality floor** — added 5 Sep 2026, see §5.3. Two thresholds, applied as filters in
+   the same query as step 2, not a ranking penalty: a global floor every candidate must
+   clear, and a stricter same-trade-or-strong-similarity gate specific to employment.
+4. **Vector similarity** over the listing text ranks whatever survives the filters.
+5. **Proximity weighting** reorders the result: same cluster × 1.00, adjacent district ×
    0.85, same province × 0.70, elsewhere × 0.50 — except where step 2's gate was open,
    which stays at × 1.00 regardless of where the other side is.
 
@@ -283,9 +320,59 @@ on Friday, matching runs against everything already stored, and finds Monday's c
 The trigger is Friday's listing, not a scheduled scan — which is why matching always
 runs against the full pool rather than only new arrivals.
 
-### 5.3 Search is a separate thing from matching, and deliberately unfiltered
+**When the results actually appear, changed 6 Sep 2026.** Matching itself is fast (one
+indexed vector query per applicable model), but writing a plain-language reason for each
+surviving match is a real LLM call *per match* — up to 8-10 sequential Groq calls for a
+listing with several matches. Running that inline, inside the same request that saves the
+listing, is what made saving feel frozen for a minute or two. It now runs as a background
+task instead: the person sees their listing saved immediately, and the app polls for match
+results behind the scenes, showing a genuine "still looking" state rather than either a
+frozen screen or a falsely-empty one. See Marketplace_Technical_Flow.md §3 for the
+mechanism.
 
-Everything above (§5–5.2) is *automatic* matching — the system pushing candidates at a
+**A genuinely empty result now explains itself.** Rather than a dead "no opportunities
+yet" regardless of cause, the system names the actual reason — nobody nearby offers this
+yet, or candidates exist but none are close enough or willing to travel, or (for
+employment specifically) nearby candidates exist but none share the trade category and
+none cleared the strong-similarity bar in §5.3. Computed from the same real counts the
+filters themselves use, not guessed.
+
+### 5.3 Quality floor
+
+Added 5 Sep 2026, direct feedback: a clay-jewelry maker seeking employment was once shown
+"Fatima Farms" (needs field workers) as a match, with a perfectly plausible-sounding
+reason attached — because matching always returned the top candidates from whatever
+passed the filters, even when none of them were genuinely a good fit. Two thresholds fix
+this, applied as SQL filters (never fetch-then-filter in Python):
+
+- **A global floor, deliberately low.** Checked directly against real data before picking
+  a number: genuinely good supply-chain matches scored as low as 0.28 on this dataset's
+  short, template-heavy text, while the bad farm/jewelry match scored 0.41-0.50 — *higher*
+  than the good one. Raw similarity alone doesn't reliably separate good from bad here, so
+  the floor is set safely below every good match measured, catching only the truly
+  degenerate, near-unrelated tail — not a confident "this line separates good from bad."
+- **A stricter, employment-only gate.** Unlike supply chain (where crossing trades is the
+  whole point — a leather supplier matching a shoemaker in a different category is exactly
+  how that model works), an employer hiring for their own trade overwhelmingly wants
+  someone in that *same* declared trade category — a cheap, reliable signal this dataset's
+  short descriptions don't reliably encode into the embedding alone. So an employment
+  candidate must either share the source's trade category, or clear a meaningfully higher
+  similarity bar to prove a genuine cross-trade connection. Calibrated from real evidence,
+  not a first guess: an initial bar caught the Fatima Farms case but two more real
+  "this shouldn't have matched" examples surfaced independently at the same level
+  (an electrician matched to graphic designers; a potter matched to a beauty parlour and a
+  repair shop) — three examples clustered in the same band was treated as a pattern, not
+  noise, and the bar was raised well above it. Still explicitly revisable: if a genuinely
+  good cross-trade employment match is ever blocked by it, that's real evidence to loosen
+  it again, the same way these examples were evidence to tighten it.
+
+This is also why the category expansion in §2 mattered beyond taxonomy: a same-category
+check is only a meaningful signal if the categories are narrow enough that two genuinely
+unrelated trades don't share one.
+
+### 5.4 Search is a separate thing from matching, and deliberately unfiltered
+
+Everything above (§5–5.3) is *automatic* matching — the system pushing candidates at a
 listing when it's created or edited. A beneficiary can also search directly, at any time,
 for something they need — a supplier for their next batch of leather, a rickshaw operator,
 a tailor to hire.

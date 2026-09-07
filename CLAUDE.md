@@ -256,28 +256,63 @@ build-in-parallel plan assumes this contract exists — see Open Questions.
   loan is recorded — solves "nothing tells the person the app exists," but is a
   convenience only, never required to sign up.
 - **API contract, at least for my slice, is now concrete.** `POST /auth/request-otp`,
-  `POST /auth/verify-otp`, `GET /me/context`, `POST /listing/extract`, `POST /listing`,
-  plus the internal embed→match→notify step, for the marketplace app's login +
-  listing-creation flow — designed 1 Sep 2026, revised 1 Sep 2026 when listing creation
-  moved from a voice-first conversational design to a card-based form (see below); this is
-  real progress on Open Question 1, for my module specifically — the eligibility-side
-  contract is still someone else's to define.
-- **Listing creation: a 5-card form, ONE LLM call, not a full voice conversation.**
-  Simplification confirmed 1 Sep 2026 — voice is out of scope for now. Almost every field
-  is a tap or a number straight into a column; the one LLM call (Groq, JSON-mode) takes
-  free text from the single text-box card and *enriches* it for matching (e.g. "سلائی" →
-  "tailoring, stitching shalwar kameez and uniforms, garment production"), returning both
-  `_en` (embedded) and `_original` (shown to people) — real value, since a thin phrase
-  makes a thin embedding. `is_remote_capable` and `output_is_physical` are BOTH plain,
-  always-asked taps, not LLM-touched at all — an earlier draft had the LLM suggest
-  `is_remote_capable`, reverted, since it silently controls whether an entire
-  distance-filter step runs for the listing (see §5 step 2 — "distance eligibility" is a
-  genuine WHERE-clause filter, not a ranking weight; only step 4, proximity re-weighting,
-  is a weight). That same filter/weight distinction is why `will_partner_outside_district`
-  needed fixing, not just flagging: an earlier card-5 visibility rule skipped it for
-  partner-only listings, which would have silently, permanently excluded them from every
-  cross-cluster joint-venture match. No schema change needed anywhere here — every field
-  already existed. Full design: Marketplace_Spec.md §3.
+  `POST /auth/verify-otp`, `GET /me/context`, `POST /listing/draft`, `POST /listing`,
+  plus a background embed→match→notify step (see below), for the marketplace app's login +
+  listing-creation flow — designed 1 Sep 2026; this is real progress on Open Question 1,
+  for my module specifically — the eligibility-side contract is still someone else's to
+  define. (`POST /listing/extract` still exists and works — the older, enrichment-only
+  call from the card-based design below — but nothing in the shipped UI calls it anymore.)
+- **Listing creation went voice-first → card-based → voice-first again, and each move had
+  a real reason.** 1 Sep 2026: simplified from a fully-conversational voice design to a
+  5-card tap-through form (role, seeking flags, one text box, two questions, details) —
+  voice felt out of scope, and almost every field became a plain tap. 5 Sep 2026, direct
+  feedback: tapping through five screens is real friction for someone using an app like
+  this for the first time, often with low literacy, and once nearly every field was a tap,
+  semantic search stopped doing much real work, since almost everything could already be
+  filtered structurally. Rebuilt to two screens — record-or-type, then review — with ONE
+  richer LLM call (Groq, JSON-mode) drafting the whole listing (role, all four seeking
+  flags, business name, description, skills, women-led, capacity, price) from whatever was
+  said, in whatever language, shown back fully editable. `is_remote_capable` and
+  `output_is_physical` are STILL both plain, always-asked taps, never LLM-touched, in both
+  designs — an earlier draft had the LLM suggest `is_remote_capable`, reverted, since it
+  silently controls whether an entire distance-filter step runs for the listing (see §5
+  step 2 — "distance eligibility" is a genuine WHERE-clause filter, not a ranking weight;
+  only step 4, proximity re-weighting, is a weight). That same filter/weight distinction is
+  why `will_partner_outside_district` needed fixing, not just flagging, in the original
+  card design: an earlier card-5 visibility rule skipped it for partner-only listings,
+  which would have silently, permanently excluded them from every cross-cluster
+  joint-venture match — preserved correctly in the rebuild. No schema change needed
+  anywhere here — every field already existed. Full design and the current two-screen
+  flow: Marketplace_Spec.md §3.
+- **Matching now runs in the background, not inline — 6 Sep 2026.** `POST /listing` used
+  to block its own HTTP response on `match_and_notify()` (find matches, then ONE Groq call
+  PER surviving match to write a reason) — up to a minute or two with nothing to show for
+  it. Now `save_listing()` returns immediately and `match_and_notify()` runs as a FastAPI
+  `BackgroundTasks` job; the frontend polls `GET /listing/{id}/matches` until
+  `store_listings.matches_computed_at` (a real migration, see below) is set. A genuinely
+  empty result now explains itself (`match_diagnostics.py` — real filter-stage counts, not
+  another LLM call) instead of a dead "no opportunities yet." Full trace:
+  Marketplace_Technical_Flow.md §3-§5.1.
+- **A real quality floor exists on matching — 5 Sep 2026.** Raw vector similarity alone
+  didn't reliably separate a good match from a bad one on this dataset's short, templated
+  text (a real bad match once scored HIGHER than a real good one). Two thresholds fix it:
+  a low global floor catching only the degenerate tail, and a stricter same-trade-or-
+  strong-similarity gate specific to employment (crossing trades is supply chain's whole
+  point; an employer hiring for their own trade is a different case). Calibrated from real
+  repeated evidence, not a first guess, and explicitly still revisable. Full reasoning:
+  Marketplace_Spec.md §5.3.
+- **Trade categories: fifteen, not ten — 6 Sep 2026.** Expanded because real listings
+  weren't finding a natural home (bulk jewelry making, a beauty parlour, a home
+  electrician, and a phone-repair shop were all being flattened into one catch-all
+  "Services," which was quietly defeating the same-trade employment gate above, since
+  unrelated trades shared a category). Still staff-picked and locked, never
+  beneficiary-editable — see `packages/data/reference_lists.md` for the full list.
+- **Real migrations exist now, not just hand-applied SQL — 6 Sep 2026.**
+  `packages/data/migrations/` + `run_migrations.py`, tracked in a `schema_migrations`
+  table. `packages/data/schema/*.sql` stay the readable current-snapshot baseline; every
+  structural change from this point forward is a numbered migration file instead of a
+  one-off script against the live database with the `.sql` files hand-edited to match
+  afterwards. See `packages/data/migrations/README.md`.
 - **"English only" (SRS 7.2) is about the matching pipeline, not what a beneficiary has
   to speak.** Marketplace_Spec.md already committed to "voice or text, in whatever
   language they speak" — so every listing field a beneficiary can see gets an `_en`

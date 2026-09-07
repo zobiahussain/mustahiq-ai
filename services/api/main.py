@@ -93,7 +93,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
@@ -104,7 +104,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "packages
 from auth import request_otp, verify_otp, get_me_context  # noqa: E402
 from create_listing import enrich_listing_text, draft_full_listing_from_speech, save_listing  # noqa: E402
 from matching_pipeline import match_and_notify  # noqa: E402
-from persist import get_stored_matches, dismiss_match  # noqa: E402
+from persist import get_stored_matches, dismiss_match, is_matches_pending  # noqa: E402
+from match_diagnostics import explain_no_matches  # noqa: E402
 from search import search_listings  # noqa: E402
 from groq_client import transcribe_audio  # noqa: E402
 from reporting import get_impact_report  # noqa: E402
@@ -374,33 +375,74 @@ def listing_detail(listing_id: str, beneficiary_id: str = Depends(get_current_be
 
 
 @app.post("/listing")
-def listing_save(body: SaveListingBody, beneficiary_id: str = Depends(get_current_beneficiary)):
+def listing_save(
+    body: SaveListingBody,
+    background_tasks: BackgroundTasks,
+    beneficiary_id: str = Depends(get_current_beneficiary),
+):
     """
-    Saves the listing, then immediately runs match_and_notify() --
-    Marketplace_Spec.md section 5, matching "fires whenever a listing is
-    created." This is also what actually fixes the delayed-match gap:
-    running it here, automatically, on every creation (not waiting for a
-    separate GET /matches call the frontend might or might not make) is
-    what lets an OLDER listing get notified the moment a NEW one matches
-    it, without anyone needing to ask.
+    Saves the listing, then SCHEDULES match_and_notify() as a background
+    task instead of running it inline -- Marketplace_Spec.md section 5,
+    matching "fires whenever a listing is created," still holds; what
+    changed 6 Sep 2026 is WHEN the caller finds out. save_listing() itself
+    is fast (one embedding call, one insert) and its result is what this
+    endpoint now returns immediately. match_and_notify() -- the slow part,
+    up to one Groq call PER candidate match -- runs afterwards, off the
+    request. See matching_pipeline.py's match_and_notify() docstring for
+    the full reasoning, and migrations/0001_matches_computed_at.sql for
+    how the frontend knows when it's actually finished.
+
+    WHY BackgroundTasks AND NOT A REWRITE TO asyncpg/httpx
+    --------------------------------------------------------------------------
+    FastAPI supports real `async def` handlers with non-blocking I/O, but
+    getting genuine concurrency out of that would mean replacing psycopg2
+    (blocking) with asyncpg and requests/groq's sync client with async
+    equivalents -- everywhere, not just here, since a blocking call inside
+    an `async def` still blocks FastAPI's single event loop just as badly
+    as it would in a sync def. That's a real rewrite touching every DB
+    call in the app, for a benefit (serving OTHER requests while this one
+    waits) this small a service barely needs yet. BackgroundTasks solves
+    the ACTUAL problem here -- the client was waiting on work it didn't
+    need to see finish before getting a response -- without that rewrite:
+    it runs the task in a thread pool after the response is sent, using
+    the existing sync code completely unchanged. The right tool for "this
+    specific slow thing shouldn't block the reply," not a wholesale
+    concurrency model change.
     """
     try:
         listing_id = save_listing(beneficiary_id=beneficiary_id, **body.model_dump())
     except ValueError as e:
         raise HTTPException(403, str(e))
 
-    matches = match_and_notify(listing_id)
-    return {"listing_id": listing_id, "matches": matches}
+    background_tasks.add_task(match_and_notify, listing_id)
+    return {"listing_id": listing_id, "matches_pending": True}
 
 
 @app.get("/listing/{listing_id}/matches")
 def listing_matches(listing_id: str, beneficiary_id: str = Depends(get_current_beneficiary)):
     """
-    A plain read of what POST /listing already computed and persisted --
-    see get_stored_matches()'s own docstring for why this deliberately
-    does NOT recompute (no fresh Groq calls just to look at a screen).
+    A plain read of what match_and_notify() has (or hasn't yet) computed
+    and persisted -- see get_stored_matches()'s own docstring for why this
+    deliberately does NOT recompute (no fresh Groq calls just to look at a
+    screen).
+
+    `pending: true` means the background task from POST /listing hasn't
+    finished yet (migrations/0001_matches_computed_at.sql) -- the frontend
+    should keep polling this endpoint rather than treat an empty list as
+    the real, final answer. Once pending is false and matches is still
+    empty, `no_match_explanation` explains WHY, direction by direction
+    (match_diagnostics.py) -- computed only in that one case, not on every
+    call, since it re-runs several counting queries.
     """
-    return {"matches": get_stored_matches(listing_id)}
+    pending = is_matches_pending(listing_id)
+    if pending is None:
+        raise HTTPException(404, "no listing with that id")
+    if pending:
+        return {"matches": [], "pending": True, "no_match_explanation": None}
+
+    matches = get_stored_matches(listing_id)
+    no_match_explanation = explain_no_matches(listing_id) if not matches else None
+    return {"matches": matches, "pending": False, "no_match_explanation": no_match_explanation}
 
 
 class DismissBody(BaseModel):
