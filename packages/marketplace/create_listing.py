@@ -47,13 +47,20 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
+def list_trade_category_names(cur) -> list[str]:
+    """The active trade categories, in schema insert order -- ONE source of
+    truth (the trade_categories table), shared by the draft prompt, the
+    save-listing validation, and GET /me/context's picker list."""
+    cur.execute("select name from trade_categories where active order by id")
+    return [r[0] for r in cur.fetchall()]
+
+
 # Marketplace_Spec.md section 3.1, verbatim -- the ONE LLM call in the
 # whole listing-creation flow, from the card-based design. Kept working
 # (still used if a caller wants just the text-enrichment step on its
 # own) even though FULL_DRAFT_PROMPT below is now the primary path -- see
 # draft_full_listing_from_speech()'s docstring.
 ENRICHMENT_PROMPT = """
-Trade category: {trade_category}
 They wrote: "{raw_text}"
 
 Return JSON:
@@ -71,15 +78,26 @@ Return JSON:
 # recording COULD contain -- see draft_full_listing_from_speech()'s
 # docstring for exactly what this prompt is deliberately NOT asked to
 # decide, and why.
+#
+# trade_category IS drafted here now (7 Sep 2026): it used to be pulled
+# straight from the microfinance loan and never shown -- which meant a
+# beneficiary whose actual business differs from what the loan officer
+# recorded (or who is just testing) had a listing filed under the wrong
+# trade, with no way to fix it. Now the LLM proposes one from the real
+# list and the review screen shows it pre-selected and changeable, same
+# as role and the seeking flags. The loan still gates WHETHER someone can
+# list at all (a Liberation Loan with no business still can't); it no
+# longer decides WHICH category the listing uses.
 FULL_DRAFT_PROMPT = """
 A small-business owner in Pakistan recorded (or typed) a description of
 their business, in their own words, in whatever language felt natural.
-Trade category (already known, don't re-derive it): {trade_category}
 
 What they said: "{raw_text}"
 
 Read it and draft a marketplace listing. Return JSON:
 {{
+  "trade_category": "the SINGLE best fit from exactly this list, copied
+     verbatim: {trade_categories}",
   "role": "exactly one of: supplier, producer, retailer, service, logistics
      -- pick whichever best matches what they described",
   "seeking_inputs": true/false -- do they mention needing MATERIALS or
@@ -120,6 +138,12 @@ def _fetch_beneficiary_context(cur, beneficiary_id: str) -> dict:
         raise ValueError(f"no beneficiary_profiles row with id={beneficiary_id}")
     district, cluster_id = row
 
+    # This is the GATE only -- "did Al-Khidmat finance this person into a
+    # business" (an approved/disbursed loan with a trade category set;
+    # trade_category_id null = a Liberation/bail/medical loan, not a
+    # business, so no listing). The specific category on the loan is NOT
+    # used for the listing anymore -- see FULL_DRAFT_PROMPT's comment and
+    # save_listing()'s trade_category parameter.
     cur.execute(
         """
         select trade_category_id from microfinance_loans
@@ -129,12 +153,12 @@ def _fetch_beneficiary_context(cur, beneficiary_id: str) -> dict:
         (beneficiary_id,),
     )
     row = cur.fetchone()
-    trade_category_id = row[0] if row else None
+    has_qualifying_loan = row is not None and row[0] is not None
 
     return {
         "district": district,
         "cluster_id": cluster_id,
-        "trade_category_id": trade_category_id,
+        "has_qualifying_loan": has_qualifying_loan,
     }
 
 
@@ -150,25 +174,15 @@ def enrich_listing_text(beneficiary_id: str, raw_text: str) -> dict:
     cur = conn.cursor()
 
     context = _fetch_beneficiary_context(cur, beneficiary_id)
-    if context["trade_category_id"] is None:
-        cur.close()
-        conn.close()
+    cur.close()
+    conn.close()
+    if not context["has_qualifying_loan"]:
         raise ValueError(
-            f"beneficiary {beneficiary_id} has no qualifying trade category -- "
+            f"beneficiary {beneficiary_id} has no qualifying microfinance loan -- "
             "see al_khidmat_marketplace_schema.sql reference query G"
         )
 
-    cur.execute(
-        "select name from trade_categories where id = %s",
-        (context["trade_category_id"],),
-    )
-    trade_category_name = cur.fetchone()[0]
-    cur.close()
-    conn.close()
-
-    enrichment = chat_json(
-        ENRICHMENT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
-    )
+    enrichment = chat_json(ENRICHMENT_PROMPT.format(raw_text=raw_text))
     return enrichment
 
 
@@ -210,30 +224,27 @@ def draft_full_listing_from_speech(beneficiary_id: str, raw_text: str) -> dict:
     with no default that lets someone skip past them un-answered.
 
     Same guard as enrich_listing_text() -- raises ValueError if this
-    beneficiary has no qualifying trade category.
+    beneficiary has no qualifying microfinance loan.
     """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
 
     context = _fetch_beneficiary_context(cur, beneficiary_id)
-    if context["trade_category_id"] is None:
+    if not context["has_qualifying_loan"]:
         cur.close()
         conn.close()
         raise ValueError(
-            f"beneficiary {beneficiary_id} has no qualifying trade category -- "
+            f"beneficiary {beneficiary_id} has no qualifying microfinance loan -- "
             "see al_khidmat_marketplace_schema.sql reference query G"
         )
-
-    cur.execute(
-        "select name from trade_categories where id = %s",
-        (context["trade_category_id"],),
-    )
-    trade_category_name = cur.fetchone()[0]
+    category_names = list_trade_category_names(cur)
     cur.close()
     conn.close()
 
     draft = chat_json(
-        FULL_DRAFT_PROMPT.format(trade_category=trade_category_name, raw_text=raw_text)
+        FULL_DRAFT_PROMPT.format(
+            trade_categories=" | ".join(category_names), raw_text=raw_text
+        )
     )
     return draft
 
@@ -241,6 +252,7 @@ def draft_full_listing_from_speech(beneficiary_id: str, raw_text: str) -> dict:
 def save_listing(
     *,
     beneficiary_id: str,
+    trade_category: str,               # NAME, from the review screen (LLM-drafted, user-confirmed)
     role: str,
     product_or_service_en: str,       # from enrich_listing_text(), possibly user-edited
     product_or_service_original: str,  # from enrich_listing_text(), possibly user-edited
@@ -264,13 +276,29 @@ def save_listing(
     cur = conn.cursor()
 
     context = _fetch_beneficiary_context(cur, beneficiary_id)
-    if context["trade_category_id"] is None:
+    if not context["has_qualifying_loan"]:
         cur.close()
         conn.close()
         raise ValueError(
-            f"beneficiary {beneficiary_id} has no qualifying trade category -- "
+            f"beneficiary {beneficiary_id} has no qualifying microfinance loan -- "
             "see al_khidmat_marketplace_schema.sql reference query G"
         )
+
+    # The listing's category is chosen at creation (LLM-drafted, then
+    # confirmed on the review screen) -- validated against the real table,
+    # never trusted blind, since store_listings.trade_category_id is a
+    # not-null FK and matching's same-trade employment gate keys off it.
+    cur.execute("select id from trade_categories where name = %s and active", (trade_category,))
+    row = cur.fetchone()
+    if row is None:
+        cur.close()
+        conn.close()
+        raise ValueError(
+            f"{trade_category!r} isn't one of the active trade categories -- "
+            "see packages/data/reference_lists.md"
+        )
+    trade_category_id = row[0]
+
     if context["cluster_id"] is None:
         cur.close()
         conn.close()
@@ -324,7 +352,7 @@ def save_listing(
         {
             "beneficiary_id": beneficiary_id,
             "business_name": business_name,
-            "trade_category_id": context["trade_category_id"],
+            "trade_category_id": trade_category_id,
             "product_or_service_en": product_or_service_en,
             "product_or_service_original": product_or_service_original,
             "skills_en": skills_en,

@@ -84,6 +84,7 @@ export default function App() {
     return (
       <ListingWizard
         token={token}
+        context={context}
         onDone={(listingId) => {
           setNewListingId(listingId);
           setStep("matches");
