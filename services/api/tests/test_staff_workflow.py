@@ -136,10 +136,13 @@ class StaffWorkflowTests(unittest.TestCase):
         with SessionLocal() as db:
             db.execute(t.verifications.update().values(valid_until=date.today() - timedelta(days=1)))
             db.commit()
+        before = [a for a in self.workspace()['applications']
+                  if a['program_id'] == demo_id('Education Support') and a['status'] == 'active']
         result = self.call('POST', f"/programs/{demo_id('Education Support')}/cycles", expected=201)
         self.assertEqual(result['pool_size'], 0)
-        self.assertEqual(result['expired_count'], 4)
-        self.assertTrue(all(a['status'] == 'expired' for a in self.workspace()['applications']))
+        self.assertEqual(result['expired_count'], len(before))
+        self.assertTrue(all(a['status'] == 'expired' for a in self.workspace()['applications']
+                            if a['program_id'] == demo_id('Education Support')))
 
     def test_expired_approved_candidate_can_be_unapproved_before_finalise(self):
         pid = demo_id('Education Support')
